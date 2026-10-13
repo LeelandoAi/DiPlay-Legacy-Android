@@ -1,0 +1,49 @@
+﻿name: Verify Release APK Version
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  verify-apk-version:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Download release APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          mkdir -p release-apk
+          gh release download "$TAG" --repo "$REPOSITORY" --pattern '*.apk' --dir release-apk
+
+      - name: Verify APK version matches release tag
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          apk=$(find release-apk -maxdepth 1 -name '*.apk' | head -1)
+          if [ -z "$apk" ]; then
+            echo "::error::Release does not contain APK asset"
+            exit 1
+          fi
+
+          expected="${TAG#v}"
+          echo "Expected versionName: $expected"
+
+          version=$(aapt dump badging "$apk" | sed -n "s/.*versionName='\([^']*\)'.*/\1/p")
+          code=$(aapt dump badging "$apk" | sed -n "s/.*versionCode='\([^']*\)'.*/\1/p")
+
+          echo "APK versionName: $version"
+          echo "APK versionCode: $code"
+
+          if [ "$version" != "$expected" ]; then
+            echo "::error::APK versionName ($version) does not match release tag ($expected)"
+            exit 1
+          fi
