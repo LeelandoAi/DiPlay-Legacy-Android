@@ -28,6 +28,13 @@ class Ipv6NcmBridge(
     private val hostLinkLocal: String,
     private val onDebugLog: (String) -> Unit = {},
     private val onError: (Throwable) -> Unit,
+    /**
+     * Issue #148: answers the iPhone's wired mDNS queries for _airplay._tcp with unicast
+     * responses. JmDNS multicast announcements cannot cross the VPN TUN (the kernel
+     * routes multicast out the physical interface), so without this the iPhone keeps
+     * querying and never opens TCP/7000. Null disables the interception.
+     */
+    @Volatile var mdnsResponder: WiredMdnsResponder? = null,
 ) : Closeable {
     init {
         require(hostMac.size == EthernetIpv6Codec.MAC_BYTES) { "hostMac must be 6 bytes" }
@@ -59,6 +66,8 @@ class Ipv6NcmBridge(
      */
     private var reportTcpBudget = 8
     private var outboundLogBudget = 24
+    /** Issue #148: keep wired mDNS answers visible without spamming the report. */
+    private var mdnsAnswerLogBudget = 6
     @Volatile
     private var lastNaTimeNanos = 0L
     private val running = AtomicBoolean(false)
@@ -125,6 +134,26 @@ class Ipv6NcmBridge(
                     // neighbour entry: forwarding an already-answered NS into Android's
                     // layer-3 stack can trigger a second (or malformed) NA.
                     // Keep all other IPv6 packets on the ordinary TUN path.
+                    continue
+                }
+
+                // Issue #148: answer the iPhone's mDNS queries for the wired AirPlay
+                // service with a unicast response sent straight back over NCM. The
+                // query must not also be injected into the TUN: nothing on the TUN
+                // answers it usefully, and a duplicate multicast reply would only
+                // confuse the iPhone's resolver.
+                val mdnsAnswer = mdnsResponder?.answerFrame(
+                    frame, ipv6.payloadOffset, ipv6.payloadLength, hostMac, ipv6.sourceMac,
+                )
+                if (mdnsAnswer != null) {
+                    ncm.send(mdnsAnswer, WRITE_TIMEOUT_MILLIS)
+                    if (mdnsAnswerLogBudget > 0) {
+                        mdnsAnswerLogBudget--
+                        val answerMsg = "ncm answered wired mdns _airplay query with unicast response " +
+                            "bytes=${mdnsAnswer.size}"
+                        Log.i(TAG, answerMsg)
+                        runCatching { onDebugLog(answerMsg) }
+                    }
                     continue
                 }
 

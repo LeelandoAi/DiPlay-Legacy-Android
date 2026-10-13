@@ -236,6 +236,27 @@ class CarPlayVpnService : VpnService() {
                 Log.w(TAG, "wired mDNS AirPlay advertisement failed", error)
                 runCatching { listener.onDebugLog("wired mDNS AirPlay advertisement failed: ${error.message}") }
             }
+            attachStage = "wired mDNS unicast responder"
+            // Issue #148: v0.2.48 proved the JmDNS advertisement above cannot reach the
+            // iPhone — the wired VPN only installs the unicast fe80::/10 route, so the
+            // kernel routes JmDNS's multicast announcements out the physical interface
+            // and they never cross the NCM bridge. Answer the iPhone's mDNS queries
+            // with unicast responses at the packet layer instead; needs real-device
+            // verification.
+            runCatching {
+                ipv6Bridge.mdnsResponder = WiredMdnsResponder(
+                    deviceName = config.deviceName,
+                    hostLinkLocal = linkLocal,
+                    airPlayPort = boundPort() ?: config.port,
+                    txtRecords = CarPlayBonjourProtocol.airPlayTxtRecords(config, identity),
+                )
+                listener.onDebugLog(
+                    "wired mdns unicast responder armed on $linkLocal port=${boundPort() ?: config.port}",
+                )
+            }.onFailure { error ->
+                Log.w(TAG, "wired mDNS unicast responder setup failed", error)
+                runCatching { listener.onDebugLog("wired mDNS unicast responder setup failed: ${error.message}") }
+            }
             AttachResult.Started
         } catch (error: Exception) {
             lastAttachFailure = "$attachStage: ${attachFailure(error)}"
