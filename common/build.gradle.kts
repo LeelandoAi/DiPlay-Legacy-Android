@@ -1,4 +1,4 @@
-plugins {
+﻿plugins {
     id("com.android.library")
 }
 
@@ -9,7 +9,7 @@ android {
     }
 
     defaultConfig {
-        minSdk = 17
+        minSdk = 19
         multiDexEnabled = true
     }
 

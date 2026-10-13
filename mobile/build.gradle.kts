@@ -28,13 +28,13 @@ android {
 
     defaultConfig {
         applicationId = "com.shihab.diplay"
-        minSdk = 17
+        minSdk = 19
         targetSdk = 37
         multiDexEnabled = true
         multiDexKeepProguard = file("multidex-config.pro")
         testInstrumentationRunner = "com.shilapi.xcertplay.T3LegacyInstrumentation"
-        versionCode = 72
-        versionName = "0.2.52"
+        versionCode = 73
+        versionName = "0.2.53"
 
     }
 
