@@ -38,7 +38,7 @@ import android.widget.*
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.core.view.doOnLayout
+import android.view.ViewTreeObserver
 import androidx.appcompat.content.res.AppCompatResources
 import androidx.core.graphics.drawable.DrawableCompat
 import androidx.core.view.WindowCompat
@@ -536,7 +536,7 @@ class DiPlayActivity : ComponentActivity() {
         // A stopped window still dispatches pre-draw but skips layout, so wait for a real layout;
         // the listener stays on this view and goes away with it.
         previousScrollY?.let { y ->
-            scroll.doOnLayout {
+            scroll.afterLegacyLayout {
                 if (rootScroll === scroll) {
                     scroll.scrollTo(0, y)
                     pendingScrollY = null
@@ -546,8 +546,8 @@ class DiPlayActivity : ComponentActivity() {
         val rail = settingsRailScroll
         pendingRailScrollY = previousRailScrollY.takeIf { rail != null }
         pendingRailFocus = restoreRailFocus && rail != null
-        rail?.doOnLayout {
-            if (settingsRailScroll !== rail) return@doOnLayout
+        rail?.afterLegacyLayout {
+            if (settingsRailScroll !== rail) return@afterLegacyLayout
             previousRailScrollY?.let { rail.scrollTo(0, it) }
             val destinations = rail.getChildAt(0) as ViewGroup
             val selected = (0 until destinations.childCount)
@@ -1142,7 +1142,7 @@ class DiPlayActivity : ComponentActivity() {
             it.text.toString() == result.title || it.text.startsWith(result.title + VALUE_SEPARATOR)
         } ?: return
         val target = generateSequence<View>(match) { it.parent as? View }.firstOrNull { it.isClickable } ?: match
-        scroll.doOnLayout {
+        scroll.afterLegacyLayout {
             var top = 0
             var view: View? = target
             while (view != null && view !== scroll) { top += view.top; view = view.parent as? View }
@@ -1153,6 +1153,18 @@ class DiPlayActivity : ComponentActivity() {
         }
     }
 
+    // AndroidX doOnLayout uses View.isLaidOut (API 19) on its fast path. On API 17,
+    // defer to the platform layout observer instead, avoiding NoSuchMethodError.
+    private fun View.afterLegacyLayout(action: () -> Unit) {
+        val observer = viewTreeObserver
+        if (!observer.isAlive) return
+        observer.addOnGlobalLayoutListener(object : ViewTreeObserver.OnGlobalLayoutListener {
+            override fun onGlobalLayout() {
+                if (observer.isAlive) observer.removeGlobalOnLayoutListener(this)
+                action()
+            }
+        })
+    }
     private fun descendants(view: View): Sequence<View> = sequence {
         yield(view)
         if (view is ViewGroup) for (i in 0 until view.childCount) yieldAll(descendants(view.getChildAt(i)))
