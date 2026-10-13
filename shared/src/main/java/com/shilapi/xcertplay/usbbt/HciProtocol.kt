@@ -237,6 +237,13 @@ object HciProtocol {
     val OP_WRITE_SIMPLE_PAIRING_MODE = opcode(0x03, 0x0056)
     val OP_SET_EVENT_MASK = opcode(0x03, 0x0001)
 
+    // Vendor firmware-download commands (OGF 0x3F). Used when HCI_Reset gets no
+    // response from a dongle whose chip needs firmware uploaded first.
+    // Without the vendor .hcd/.bin blob we can only enter download mode and
+    // report; the blob itself is not bundled.
+    val OP_BCM_DOWNLOAD_MINIDRIVER = opcode(0x3F, 0x002E)
+    val OP_RTL_DOWNLOAD_COMMAND = opcode(0x3F, 0x0020)
+
     // IO capability values (for IO_Capability_Request_Reply).
     const val IO_CAP_DISPLAY_ONLY = 0x00
     const val IO_CAP_DISPLAY_YES_NO = 0x01

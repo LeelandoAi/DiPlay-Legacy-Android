@@ -10,10 +10,12 @@ import android.util.Log
 import com.shilapi.xcertplay.usbbt.HciProtocol.EVT_COMMAND_COMPLETE
 import com.shilapi.xcertplay.usbbt.HciProtocol.EVT_COMMAND_STATUS
 import com.shilapi.xcertplay.usbbt.HciProtocol.MAX_EVENT_PACKET_SIZE
+import com.shilapi.xcertplay.usbbt.HciProtocol.OP_BCM_DOWNLOAD_MINIDRIVER
 import com.shilapi.xcertplay.usbbt.HciProtocol.OP_READ_BD_ADDR
 import com.shilapi.xcertplay.usbbt.HciProtocol.OP_READ_BUFFER_SIZE
 import com.shilapi.xcertplay.usbbt.HciProtocol.OP_READ_LOCAL_VERSION
 import com.shilapi.xcertplay.usbbt.HciProtocol.OP_RESET
+import com.shilapi.xcertplay.usbbt.HciProtocol.OP_RTL_DOWNLOAD_COMMAND
 import com.shilapi.xcertplay.usbbt.HciProtocol.OP_WRITE_LOCAL_NAME
 import com.shilapi.xcertplay.usbbt.HciProtocol.OP_WRITE_SCAN_ENABLE
 import com.shilapi.xcertplay.usbbt.HciProtocol.SCAN_INQUIRY_AND_PAGE
@@ -247,10 +249,6 @@ class UsbBtHci private constructor(
      * Minimal bring-up so the dongle becomes usable and discoverable:
      * Reset -> Read_Local_Version -> Read_BD_ADDR -> Read_Buffer_Size ->
      * Write_Scan_Enable(inquiry+page) -> Write_Local_Name.
-     *
-     * Note: several Broadcom/Realtek dongles need vendor firmware uploaded
-     * before they answer usefully; if Reset itself fails the log will say so
-     * and firmware loading (future phase) is the next step.
      */
     fun initialize(localName: String = "DiPlay"): HciResult<InitResult> {
         val steps = mutableListOf<String>()
@@ -261,7 +259,19 @@ class UsbBtHci private constructor(
 
         val reset = sendCommand(OP_RESET)
         if (reset is HciResult.Failed) {
-            return HciResult.Failed("HCI_Reset failed: ${reset.reason}; dongle may need firmware")
+            // Several Broadcom/Realtek dongles ship without firmware and ignore
+            // HCI_Reset until their vendor blob is uploaded. Try to put the
+            // chip in download mode so the diagnostic says exactly that.
+            val recovery = tryVendorFirmwareRecovery()
+            val hint = if (recovery) {
+                "dongle entered firmware-download mode but no vendor firmware blob is bundled; " +
+                    "obtain the .hcd (Broadcom) / .bin (Realtek) for VID 0x${device.vendorId.toString(16)} " +
+                    "and place it where the app can load it"
+            } else {
+                "dongle may need vendor firmware (no response to HCI_Reset)"
+            }
+            step("firmware recovery attempted: $hint")
+            return HciResult.Failed("HCI_Reset failed: ${reset.reason}; $hint")
         }
         step("HCI_Reset ok")
 
@@ -303,6 +313,43 @@ class UsbBtHci private constructor(
         }
 
         return HciResult.Ok(InitResult(bdAddr = bdAddr, bufferSize = bufferSize, steps = steps))
+    }
+
+    /**
+     * Attempt to put a firmware-less Broadcom/Realtek chip into download mode.
+     * Returns true when the chip acknowledged the vendor download command
+     * (meaning it is ready for a firmware blob we do not bundle).
+     *
+     * Vendor commands (public knowledge, same as every OS btusb driver sends):
+     * - Broadcom (0x0a5c): HCI_VSC_DOWNLOAD_MINIDRIVER (0xFC2E)
+     * - Realtek  (0x0bda): HCI_VSC_DOWNLOAD (0xFC20)
+     */
+    private fun tryVendorFirmwareRecovery(): Boolean {
+        val opcode = when (device.vendorId) {
+            0x0a5c -> OP_BCM_DOWNLOAD_MINIDRIVER
+            0x0bda -> OP_RTL_DOWNLOAD_COMMAND
+            else -> {
+                Log.i(
+                    TAG,
+                    "no vendor firmware sequence for VID 0x${device.vendorId.toString(16)}",
+                )
+                return false
+            }
+        }
+        return when (val r = sendCommand(opcode, timeoutMs = 3_000)) {
+            is HciResult.Ok -> {
+                Log.i(
+                    TAG,
+                    "vendor download command acknowledged (opcode 0x${opcode.toString(16)}); " +
+                        "chip awaits firmware blob",
+                )
+                true
+            }
+            is HciResult.Failed -> {
+                Log.i(TAG, "vendor download command failed: ${r.reason}")
+                false
+            }
+        }
     }
 
     override fun close() {
