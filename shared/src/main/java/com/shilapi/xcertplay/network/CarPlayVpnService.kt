@@ -116,7 +116,7 @@ class CarPlayVpnService : VpnService() {
 
             val builder = Builder()
                 .addAddress(linkLocal, LINK_PREFIX)
-                .addRoute(LINK_LOCAL_ROUTE, LINK_PREFIX)
+                .addRoute(LINK_LOCAL_ROUTE, LINK_ROUTE_PREFIX)
                 .setSession(SESSION_NAME)
                 .setMtu(TUN_MTU)
             if (realSdkInt() >= 21 && !perAppVpnUnsupported) {
@@ -146,7 +146,7 @@ class CarPlayVpnService : VpnService() {
                         }
                         val fallbackBuilder = Builder()
                             .addAddress(linkLocal, LINK_PREFIX)
-                            .addRoute(LINK_LOCAL_ROUTE, LINK_PREFIX)
+                            .addRoute(LINK_LOCAL_ROUTE, LINK_ROUTE_PREFIX)
                             .setSession(SESSION_NAME)
                             .setMtu(TUN_MTU)
                         fallbackBuilder.setBlocking(true)
@@ -538,6 +538,16 @@ class CarPlayVpnService : VpnService() {
         private const val TAG = "xcertplay-usb"
         private const val LINK_PREFIX = 64
         private const val LINK_LOCAL_ROUTE = "fe80::"
+        /**
+         * Issue #148/#150: the route must cover the whole link-local range (fe80::/10), not
+         * just fe80::/64. The iPhone's link-local address is EUI-64 derived from its MAC
+         * (fe80::xxxx:xxxx:xxxx:xxxx with non-zero middle bits), so it is NOT inside
+         * fe80::/64. With the /64 route the kernel accepted the iPhone's TCP SYN (the
+         * listener address is local) but had no route back for the SYN-ACK and dropped it
+         * silently — "no AirPlay TCP after CarPlay StartSession" with SYNs visible on the
+         * NCM bridge. The interface address itself stays /64; only the route widens.
+         */
+        private const val LINK_ROUTE_PREFIX = 10
         private const val SESSION_NAME = "xcertplay CarPlay"
         private const val TUN_MTU = 1500
 
