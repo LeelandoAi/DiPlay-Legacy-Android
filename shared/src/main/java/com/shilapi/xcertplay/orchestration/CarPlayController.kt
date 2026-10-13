@@ -1402,7 +1402,17 @@ class CarPlayController(
                 // Use bundled JmDNS instead of crashing in NsdManager.getMessenger().
                 useInterfaceMdns = com.shilapi.xcertplay.network.useBundledCarPlayMdns(Build.VERSION.SDK_INT),
                 onEvent = { event -> debugLog("wireless bonjour: ${event.diagnosticSummary()}") },
-                additionalAddresses = hotspotInfo.hostAddresses.filter { it != hostAddress },
+                // Ported from dagou888/DiPlay-UIS8141E@9741cac: some Android 8.1
+                // head units are much more reliable when the Personal Hotspot session
+                // stays on one IPv4 interface; don't let JmDNS create an IPv6
+                // responder on a second address family during the CarPlay handoff.
+                additionalAddresses = hotspotInfo.hostAddresses.filter {
+                    it != hostAddress && (
+                        Build.VERSION.SDK_INT > Build.VERSION_CODES.P ||
+                            hotspotInfo.backend != WirelessHotspotBackend.EXISTING_WIFI ||
+                            it is java.net.Inet4Address
+                        )
+                },
             )
             synchronized(wirelessResourceLock) {
                 if (isStaleWirelessRun(generation)) return
