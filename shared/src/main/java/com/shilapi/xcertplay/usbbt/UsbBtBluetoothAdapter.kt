@@ -1,7 +1,12 @@
 package com.shilapi.xcertplay.usbbt
 
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
+import android.os.Build
 import android.util.Log
 import com.shilapi.xcertplay.bluetooth.CarPlayBluetooth
 import com.shilapi.xcertplay.bluetooth.CarPlayBluetoothDevice
@@ -13,12 +18,14 @@ import com.shilapi.xcertplay.usbbt.HciProtocol.encodeBdAddr
 import com.shilapi.xcertplay.usbbt.HciProtocol.encodeCreateConnection
 import com.shilapi.xcertplay.usbbt.HciProtocol.encodeDisconnect
 import com.shilapi.xcertplay.usbbt.HciProtocol.parseConnectionComplete
+import java.io.Closeable
 import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * [CarPlayBluetooth] implementation backed by a USB Bluetooth dongle driven
@@ -77,6 +84,21 @@ class UsbBtBluetoothAdapter(
     private val pumpRunning = AtomicBoolean(false)
     private var pumpThread: Thread? = null
 
+    /** USB permission / detach receivers; registered on first enable() attempt. */
+    private var usbReceivers: Closeable? = null
+
+    /** Set when enable() is waiting for the user to grant USB permission. */
+    private val awaitingPermission = AtomicBoolean(false)
+
+    /** BD_ADDR (uppercase) -> ACL handle for established connections. */
+    private val aclHandleByAddr = ConcurrentHashMap<String, Int>()
+
+    /** ACL handle -> active user count (RFCOMM streams sharing one ACL). */
+    private val aclRefCount = ConcurrentHashMap<Int, AtomicInteger>()
+
+    /** BD_ADDRs in most-recently-connected order (for getConnectedDevice). */
+    private val connectedOrder = java.util.concurrent.ConcurrentLinkedDeque<String>()
+
     // ------------------------------------------------------------------
     // CarPlayBluetooth
     // ------------------------------------------------------------------
@@ -95,22 +117,28 @@ class UsbBtBluetoothAdapter(
     /**
      * Bring up the dongle: permission -> open -> initialize -> pairing agent.
      * Returns true when the HCI layer is ready.
+     *
+     * If USB permission is not yet granted, requests it and returns false; the
+     * permission broadcast receiver (registered here) automatically retries
+     * enable() on a background thread once the user grants access.
      */
     override fun enable(): Boolean = synchronized(lock) {
         if (isEnabled()) return true
+        ensureUsbReceivers()
         val mgr = usbManager ?: return false
         val dongle = runCatching { detector.findDongles(mgr).firstOrNull() }.getOrNull()
             ?: run {
                 Log.w(TAG, "enable: no dongle found")
                 return false
             }
-        // USB permission: synchronous path only when already granted; the
-        // host activity routes the async grant to retry enable().
         if (!mgr.hasPermission(dongle.device)) {
-            Log.i(TAG, "enable: requesting USB permission for dongle")
-            detector.ensurePermission(mgr, dongle)
+            if (awaitingPermission.compareAndSet(false, true)) {
+                Log.i(TAG, "enable: requesting USB permission for dongle")
+                detector.ensurePermission(mgr, dongle)
+            }
             return false
         }
+        awaitingPermission.set(false)
         val opened = UsbBtHci.open(mgr, dongle.device) ?: return false
         when (val init = opened.initialize()) {
             is UsbBtHci.HciResult.Failed -> {
@@ -121,13 +149,95 @@ class UsbBtBluetoothAdapter(
             is UsbBtHci.HciResult.Ok -> {
                 localBdAddr = init.value.bdAddr
                 dongleLabel = dongle.vendorLabel
+                initSteps = init.value.steps
             }
         }
         hci = opened
-        pairingAgent = UsbBtPairingAgent(opened, linkKeys).also { it.start() }
+        pairingAgent = UsbBtPairingAgent(opened, linkKeys, pairingUiCallback).also { it.start() }
         startPump(opened)
         Log.i(TAG, "USB Bluetooth enabled: bdAddr=$localBdAddr vendor=${dongle.vendorLabel}")
         return true
+    }
+
+    /** HCI init step log, exposed for diagnostics. */
+    @Volatile private var initSteps: List<String> = emptyList()
+
+    /** Optional UI hook for Numeric Comparison pairing (item 2). Null = Just Works. */
+    @Volatile var pairingUiCallback: UsbBtPairingAgent.PairingUiCallback? = null
+
+    /**
+     * Register USB permission + device-detach receivers once. The permission
+     * receiver retries enable() in the background after the user grants access;
+     * the detach receiver shuts the stack down when the dongle is unplugged.
+     */
+    private fun ensureUsbReceivers() {
+        if (usbReceivers != null) return
+        val permissionAction = UsbBtDongleDetector.permissionAction(appContext.packageName)
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) {
+                when (intent.action) {
+                    permissionAction -> {
+                        val device = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            intent.getParcelableExtra(
+                                UsbManager.EXTRA_DEVICE,
+                                UsbDevice::class.java,
+                            )
+                        } else {
+                            @Suppress("DEPRECATION")
+                            intent.getParcelableExtra(UsbManager.EXTRA_DEVICE) as? UsbDevice
+                        }
+                        val granted = intent.getBooleanExtra(
+                            UsbManager.EXTRA_PERMISSION_GRANTED,
+                            false,
+                        )
+                        Log.i(TAG, "USB permission result: granted=$granted device=$device")
+                        if (granted && device != null &&
+                            detector.identify(device) != null
+                        ) {
+                            // Retry on a background thread; enable() blocks.
+                            Thread({
+                                runCatching { enable() }
+                                    .onFailure { Log.w(TAG, "permission retry enable failed", it) }
+                            }, "UsbBtPermissionRetry").apply {
+                                isDaemon = true
+                                start()
+                            }
+                        } else {
+                            awaitingPermission.set(false)
+                        }
+                    }
+                    UsbManager.ACTION_USB_DEVICE_DETACHED -> {
+                        val device = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            intent.getParcelableExtra(
+                                UsbManager.EXTRA_DEVICE,
+                                UsbDevice::class.java,
+                            )
+                        } else {
+                            @Suppress("DEPRECATION")
+                            intent.getParcelableExtra(UsbManager.EXTRA_DEVICE) as? UsbDevice
+                        }
+                        if (device != null && detector.identify(device) != null) {
+                            Log.i(TAG, "dongle detached; shutting down USB Bluetooth")
+                            shutdown()
+                        }
+                    }
+                }
+            }
+        }
+        val filter = IntentFilter(permissionAction).apply {
+            addAction(UsbManager.ACTION_USB_DEVICE_DETACHED)
+        }
+        val registered = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            appContext.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            appContext.registerReceiver(receiver, filter)
+        }
+        usbReceivers = Closeable {
+            runCatching { appContext.unregisterReceiver(receiver) }
+        }
+        // Keep a reference so lint does not flag the unused value; the Closeable
+        // is released in shutdown().
+        if (registered == null) Log.w(TAG, "receiver registration returned null")
     }
 
     override fun localAddress(context: Context): String? = synchronized(lock) { localBdAddr }
@@ -141,30 +251,28 @@ class UsbBtBluetoothAdapter(
     }
 
     override fun getConnectedDevice(): CarPlayBluetoothDevice? {
-        // We track only the most recent ACL peer; good enough for the
-        // "is an iPhone connected" check in the wireless flow.
-        val addr = lastConnectedPeer ?: return null
+        val addr = connectedOrder.peekLast() ?: return null
         return CarPlayBluetoothDevice(name = "iPhone ($addr)", address = addr, isConnected = true)
     }
-
-    @Volatile private var lastConnectedPeer: String? = null
 
     /**
      * Open an RFCOMM stream to [deviceAddress] for the iAP2 service ([uuid]
      * is accepted for interface compatibility; the channel comes from SDP).
+     *
+     * ACL connections are shared per peer: opening a second stream to an
+     * already-connected BD_ADDR reuses the ACL (refcounted).
      */
     override fun openRfcommStream(deviceAddress: String, uuid: String): BlockingDuplexByteStream {
         val h = synchronized(lock) { hci } ?: throw IOException("USB Bluetooth not enabled")
         if (!isEnabled()) throw IOException("USB Bluetooth not enabled")
 
-        // 1) ACL connection.
+        // 1) ACL connection (reused when already up for this peer).
         val handle = createAclConnection(h, deviceAddress)
-        lastConnectedPeer = deviceAddress
-
+        val freshAcl = aclRefCount[handle]?.get() == 1
         try {
             // 2) L2CAP layer on this handle + ACL receive pump hookup.
-            val l2cap = L2capLayer(aclHandle = handle, hci = h)
-            l2capLayers[handle] = l2cap
+            // One L2CAP instance per ACL handle, shared by all streams on it.
+            val l2cap = l2capLayers.getOrPut(handle) { L2capLayer(aclHandle = handle, hci = h) }
 
             // 3) SDP: find the iAP2 RFCOMM channel.
             val sdp = SdpClient(l2cap, handle)
@@ -196,20 +304,32 @@ class UsbBtBluetoothAdapter(
                 onClose = { teardown(handle) },
             )
         } catch (t: Throwable) {
-            teardown(handle)
+            // Only tear down the ACL when we created it for this call.
+            if (freshAcl) teardown(handle) else releaseAclRef(handle)
             throw t
         }
     }
 
     // ------------------------------------------------------------------
-    // ACL connection management.
+    // ACL connection management (multi-peer, refcounted).
     // ------------------------------------------------------------------
 
+    /**
+     * Get or establish the ACL connection to [bdAddr]. Returns the handle and
+     * bumps its refcount; callers must pair every success with [releaseAclRef]
+     * (via [teardown]).
+     */
     private fun createAclConnection(h: UsbBtHci, bdAddr: String): Int {
+        val key = bdAddr.uppercase()
+        aclHandleByAddr[key]?.let { existing ->
+            aclRefCount.getOrPut(existing) { AtomicInteger(0) }.incrementAndGet()
+            Log.i(TAG, "ACL reused: $bdAddr handle=0x${existing.toString(16)}")
+            return existing
+        }
         val addrBytes = encodeBdAddr(bdAddr)
             ?: throw IOException("malformed BD_ADDR: $bdAddr")
         val pending = PendingAcl()
-        pendingAcl[bdAddr.uppercase()] = pending
+        pendingAcl[key] = pending
         try {
             when (val r = h.sendCommand(OP_CREATE_CONNECTION, encodeCreateConnection(addrBytes))) {
                 is UsbBtHci.HciResult.Failed ->
@@ -224,19 +344,36 @@ class UsbBtBluetoothAdapter(
                     "ACL connection failed to $bdAddr status=0x${pending.status.toString(16)}",
                 )
             }
-            Log.i(TAG, "ACL up: $bdAddr handle=0x${pending.handle.toString(16)}")
-            return pending.handle
+            val handle = pending.handle
+            aclHandleByAddr[key] = handle
+            aclRefCount.getOrPut(handle) { AtomicInteger(0) }.incrementAndGet()
+            connectedOrder.remove(key)
+            connectedOrder.addLast(key)
+            Log.i(TAG, "ACL up: $bdAddr handle=0x${handle.toString(16)}")
+            return handle
         } finally {
-            pendingAcl.remove(bdAddr.uppercase())
+            pendingAcl.remove(key)
         }
     }
 
-    private fun teardown(handle: Int) {
-        l2capLayers.remove(handle)?.let { runCatching { it.close() } }
-        val h = synchronized(lock) { hci } ?: return
-        runCatching { h.sendCommand(OP_DISCONNECT, encodeDisconnect(handle)) }
-        if (lastConnectedPeer != null) lastConnectedPeer = null
+    /** Release one user of [handle]; disconnects HCI only when the last user goes. */
+    private fun releaseAclRef(handle: Int) {
+        val remaining = aclRefCount[handle]?.decrementAndGet() ?: 0
+        if (remaining <= 0) {
+            aclRefCount.remove(handle)
+            // Find and drop the BD_ADDR mapping for this handle.
+            aclHandleByAddr.entries.find { it.value == handle }?.let { entry ->
+                aclHandleByAddr.remove(entry.key)
+                connectedOrder.remove(entry.key)
+            }
+            l2capLayers.remove(handle)?.let { runCatching { it.close() } }
+            val h = synchronized(lock) { hci } ?: return
+            runCatching { h.sendCommand(OP_DISCONNECT, encodeDisconnect(handle)) }
+            Log.i(TAG, "ACL down: handle=0x${handle.toString(16)}")
+        }
     }
+
+    private fun teardown(handle: Int) = releaseAclRef(handle)
 
     // ------------------------------------------------------------------
     // Event / ACL pump.
@@ -277,18 +414,51 @@ class UsbBtBluetoothAdapter(
         pumpThread = null
         pairingAgent?.stop()
         pairingAgent = null
+        runCatching { usbReceivers?.close() }
+        usbReceivers = null
+        awaitingPermission.set(false)
         synchronized(lock) {
             hci?.let { runCatching { it.close() } }
             hci = null
             localBdAddr = null
+            initSteps = emptyList()
         }
-        l2capLayers.keys.toList().forEach { teardown(it) }
+        aclHandleByAddr.keys.toList().forEach { addr ->
+            aclHandleByAddr.remove(addr)?.let { handle ->
+                aclRefCount.remove(handle)
+                l2capLayers.remove(handle)?.let { runCatching { it.close() } }
+            }
+        }
+        aclRefCount.clear()
+        connectedOrder.clear()
+        pendingAcl.clear()
         Log.i(TAG, "USB Bluetooth shut down")
+    }
+
+    /** Snapshot for diagnostics (LegacyConnectionProbe). */
+    fun diagnosticState(): String {
+        val dongle = runCatching {
+            usbManager?.let { detector.findDongles(it).firstOrNull() }
+        }.getOrNull()
+        return buildString {
+            append("dongle=")
+            append(dongle?.let { "vid=0x${it.device.vendorId.toString(16)} pid=0x${it.device.productId.toString(16)} ${it.vendorLabel}" } ?: "none")
+            append(" hciUp=${hci != null}")
+            append(" initSteps=${initSteps.size}")
+            append(" aclCount=${aclHandleByAddr.size}")
+            append(" peers=[${aclHandleByAddr.keys.joinToString(",")}]")
+            append(" linkKeys=${linkKeys.peers().size}")
+            append(" awaitingPermission=${awaitingPermission.get()}")
+        }
     }
 }
 
 /**
  * [BlockingDuplexByteStream] over an RFCOMM DLC.
+ *
+ * Inbound UIH frames are reassembled: [recv] returns up to [maxBytes] from an
+ * internal buffer and keeps the remainder for the next call, so callers never
+ * lose the tail of a frame larger than their read size.
  */
 private class UsbBtRfcommStream(
     private val rfcomm: RfcommLayer,
@@ -298,6 +468,9 @@ private class UsbBtRfcommStream(
 
     private val inbound = LinkedBlockingQueue<ByteArray>(64)
     private val closed = AtomicBoolean(false)
+
+    /** Reassembly buffer for frames larger than one recv() call. Guarded by itself. */
+    private val reassembly = java.io.ByteArrayOutputStream()
 
     init {
         rfcomm.onData(dlc) { data ->
@@ -313,11 +486,28 @@ private class UsbBtRfcommStream(
 
     override fun recv(maxBytes: Int, timeoutMillis: Long): ByteArray? {
         if (closed.get()) return ByteArray(0)
+        synchronized(reassembly) {
+            if (reassembly.size() > 0) return takeFromReassembly(maxBytes)
+        }
         val chunk = inbound.poll(timeoutMillis, TimeUnit.MILLISECONDS) ?: return null
-        return if (chunk.size <= maxBytes) chunk else chunk.copyOf(maxBytes)
-        // Note: truncation drops the tail; iAP2 frames are small enough that
-        // the caller reassembles from the stream. A production hardening would
-        // buffer the remainder.
+        synchronized(reassembly) {
+            reassembly.write(chunk, 0, chunk.size)
+            return takeFromReassembly(maxBytes)
+        }
+    }
+
+    /** Take up to [maxBytes] from the reassembly buffer, keeping the rest. */
+    private fun takeFromReassembly(maxBytes: Int): ByteArray {
+        val buf = reassembly.toByteArray()
+        return if (buf.size <= maxBytes) {
+            reassembly.reset()
+            buf
+        } else {
+            val out = buf.copyOf(maxBytes)
+            reassembly.reset()
+            reassembly.write(buf, maxBytes, buf.size - maxBytes)
+            out
+        }
     }
 
     override fun close() {
