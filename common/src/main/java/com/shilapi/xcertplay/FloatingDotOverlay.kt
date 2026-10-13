@@ -85,20 +85,35 @@ object FloatingDotOverlay {
         }
 
         val dot = object : View(context) {
-            private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            // DiPlay 品牌风格：蓝紫渐变底 + 白色 C 形 logo
+            private val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+            private val logoPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 color = 0xFFFFFFFF.toInt()
-                alpha = 180
-            }
-            private val ringPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                color = 0xFF3A86FF.toInt()
                 style = Paint.Style.STROKE
-                strokeWidth = 3 * density
+                strokeWidth = 5 * density
+                strokeCap = Paint.Cap.ROUND
+            }
+
+            override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+                super.onSizeChanged(w, h, oldw, oldh)
+                bgPaint.shader = android.graphics.LinearGradient(
+                    0f, 0f, w.toFloat(), h.toFloat(),
+                    0xFF6B6BF5.toInt(), 0xFF4A4AD0.toInt(),
+                    android.graphics.Shader.TileMode.CLAMP,
+                )
             }
 
             override fun onDraw(canvas: Canvas) {
-                val r = (width / 2f) - ringPaint.strokeWidth
-                canvas.drawCircle(width / 2f, height / 2f, r, paint)
-                canvas.drawCircle(width / 2f, height / 2f, r, ringPaint)
+                val cx = width / 2f
+                val cy = height / 2f
+                val r = width / 2f
+                // 渐变圆底
+                canvas.drawCircle(cx, cy, r, bgPaint)
+                // 白色 C 形：从 55° 到 305° 的圆弧，开口朝右
+                val logoR = r * 0.52f
+                val oval = android.graphics.RectF(
+                    cx - logoR, cy - logoR, cx + logoR, cy + logoR)
+                canvas.drawArc(oval, 55f, 250f, false, logoPaint)
             }
         }
 
