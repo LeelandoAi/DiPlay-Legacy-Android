@@ -65,6 +65,14 @@ class CarPlayVpnService : VpnService() {
     private var additionalServers: List<ServerSocket> = emptyList()
     @Volatile private var bridge: Ipv6NcmBridge? = null
     private var tun: ParcelFileDescriptor? = null
+    /**
+     * Issue #145: the iPhone discovers the wired AirPlay endpoint via Bonjour on the
+     * USB link — it sends mDNS queries but never opens TCP/7000 until something
+     * answers. This advertises _airplay._tcp on the TUN link-local address for the
+     * lifetime of the wired attachment (the wireless path does the same on the
+     * hotspot interface).
+     */
+    private var wiredBonjour: CarPlayBonjour? = null
     private var attachGeneration = 0
     @Volatile var lastAttachFailure: String? = null
         private set
@@ -203,6 +211,30 @@ class CarPlayVpnService : VpnService() {
             runCatching { listener.onDebugLog("wired AirPlay listener bound port=${boundPort()}") }
             boundPort()?.let { port ->
                 runCatching { listener.onDebugLog("wired airplay listen kernel-check: ${verifyTcp6Listen(port)}") }
+            }
+            attachStage = "wired mDNS AirPlay advertisement"
+            // Best-effort: if the advertisement fails, the attach still stands (the
+            // iPhone may already know the endpoint); without it the iPhone keeps
+            // sending mDNS queries and never opens the AirPlay TCP connection.
+            runCatching {
+                val bonjour = CarPlayBonjour(
+                    context = this@CarPlayVpnService,
+                    config = config.copy(port = boundPort() ?: config.port),
+                    identity = identity,
+                    advertisedHost = linkLocal,
+                    useInterfaceMdns = useBundledCarPlayMdns(Build.VERSION.SDK_INT),
+                    onEvent = { event ->
+                        runCatching { listener.onDebugLog("wired bonjour: ${event.diagnosticSummary()}") }
+                    },
+                )
+                bonjour.start()
+                wiredBonjour = bonjour
+                listener.onDebugLog(
+                    "wired mDNS AirPlay advertisement started on $linkLocal port=${boundPort() ?: config.port}",
+                )
+            }.onFailure { error ->
+                Log.w(TAG, "wired mDNS AirPlay advertisement failed", error)
+                runCatching { listener.onDebugLog("wired mDNS AirPlay advertisement failed: ${error.message}") }
             }
             AttachResult.Started
         } catch (error: Exception) {
@@ -475,6 +507,8 @@ class CarPlayVpnService : VpnService() {
         closeSessionsLocked()
         bridge?.close()
         bridge = null
+        runCatching { wiredBonjour?.close() }
+        wiredBonjour = null
         tun?.close()
         tun = null
     }
