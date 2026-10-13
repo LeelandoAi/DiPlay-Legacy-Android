@@ -2214,7 +2214,11 @@ class DiPlayActivity : ComponentActivity() {
             }
         })
         val error = label("", 14, WARNING)
-        error.accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
+        // View.setAccessibilityLiveRegion is API 19+; on real API 17 (e.g. 4.2.2 head units)
+        // the call below would throw NoSuchMethodError and crash the settings dialog.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+            error.accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
+        }
         fields.addView(error)
         val dialog = AlertDialog.Builder(this).setTitle(getString(if (existingWifi) R.string.existing_wifi_details else R.string.car_hotspot_details))
             .setView(ScrollView(this).apply { addView(fields) })
