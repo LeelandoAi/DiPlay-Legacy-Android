@@ -4539,11 +4539,39 @@ class CarPlayHostActivity : ComponentActivity() {
         startCarPlay(size)
     }
 
+    /**
+     * Issues #143/#144: the head unit's netd VPN state can wedge (stale fwmark uid/rule
+     * from a previous session not cleaned up). The framework's establish() then fails
+     * identically every time with "Invalid argument" / "Device or resource busy" / "No such
+     * device" — the app cannot clear netd state, only a reboot (or app restart) recovers it.
+     * Detect this from the translated hint text so the retry loop stops instead of hammering
+     * a doomed establish forever.
+     */
+    private fun isUnrecoverableVpnState(reason: String): Boolean {
+        val lower = reason.lowercase()
+        // Matches the hints produced by CarPlayVpnService.withStaleUidRuleHint /
+        // withWedgedVpnHint: netd rejected the fwmark rule and only a reboot recovers it.
+        return lower.contains("netd") &&
+            (lower.contains("invalid argument") ||
+                lower.contains("device or resource busy") ||
+                lower.contains("no such device")) &&
+            lower.contains("reboot")
+    }
+
     private fun reconnectAfterLoss(reason: String, startupFailure: WirelessStartupFailure? = null) {
         if (!CarPlayBackgroundSession.isOwner(this)) return
         if (menuOpen) recoveryPendingAfterMenu = true
         if (shuttingDown.get() || menuOpen || handshakeResetInProgress || startupRetryStopped) return
         if (reconnectScheduled) return
+        // Issues #143/#144: when the head unit's netd VPN state is wedged (stale fwmark
+        // uid/rule rejected with "Invalid argument" / "Device or resource busy" / "No such
+        // device"), the app cannot clear it — every re-establish fails identically. Stop the
+        // automatic retry loop instead of hammering a doomed establish; the user must reboot.
+        if (isUnrecoverableVpnState(reason)) {
+            appendLog("wired VPN netd state unrecoverable; automatic retry stopped, reboot required generation=$restartGeneration")
+            setConnectionStage(reason)
+            return
+        }
         val startupDelay = if (startupFailure != null && startupFailure != WirelessStartupFailure.HOTSPOT_CONFIGURATION)
             startupRetryBudget.nextDelayMillis() else null
         if (startupFailure != null && startupDelay == null) {
