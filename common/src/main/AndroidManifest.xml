@@ -37,6 +37,13 @@
         <receiver android:name="com.shilapi.xcertplay.LegacyMediaKeyReceiver" android:exported="false">
             <intent-filter><action android:name="android.intent.action.MEDIA_BUTTON" /></intent-filter>
         </receiver>
+        <!-- Issue #151: GKUI/ECARX units swallow steering-wheel media keys in their own
+             mediacenter receiver before DiPlay's MediaSession sees them. This receiver runs
+             at maximum ordered-broadcast priority but stays disabled unless the runtime
+             detects an ECARX/GKUI unit (see CarPlayMediaKeys), so other cars are unaffected. -->
+        <receiver android:name="com.shilapi.xcertplay.WheelMediaKeyReceiver" android:exported="true" android:enabled="false">
+            <intent-filter android:priority="1000"><action android:name="android.intent.action.MEDIA_BUTTON" /></intent-filter>
+        </receiver>
         <provider
             android:name="com.shilapi.xcertplay.DiagnosticReportProvider"
             android:authorities="${applicationId}.diagnostic-reports"

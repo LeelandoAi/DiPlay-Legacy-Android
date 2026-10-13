@@ -85,6 +85,7 @@ internal object CarPlayMediaKeys {
         next.playbackListener = { playing -> onIphonePlaying(next, playing) }
         next.nowPlayingListener = { update -> onNowPlayingChanged(next, update) }
         next.artworkListener = { id, bytes -> onArtworkChanged(next, id, bytes) }
+        updateWheelKeyReceiver(context)
     }
 
     /** Ends key handling for [expected]; a newer controller's state is left alone. */
@@ -348,6 +349,53 @@ internal object CarPlayMediaKeys {
         if (event.action != KeyEvent.ACTION_DOWN || event.repeatCount != 0) return
         val index = CarPlayMediaButton.forKeyCode(event.keyCode) ?: return
         send(index, KeyEvent.keyCodeToString(event.keyCode))
+    }
+
+    /**
+     * Issue #151: entry point for [WheelMediaKeyReceiver] on GKUI/ECARX head units, where
+     * the steering-wheel media keys only travel as an ordered ACTION_MEDIA_BUTTON broadcast
+     * and never reach the MediaSession. Returns true when CarPlay consumed the key (the
+     * caller should abort the broadcast so the car's mediacenter does not act on it too).
+     *
+     * Gated on the media session existing: it is created once CarPlay audio has started in
+     * this connection, mirroring when the session path would handle keys on other units.
+     * Anything else lets the broadcast pass through to the car's own player.
+     */
+    @Synchronized
+    fun handleWheelMediaKey(keyCode: Int): Boolean {
+        if (session == null || controller == null) return false
+        val index = CarPlayMediaButton.forKeyCode(keyCode) ?: return false
+        send(index, KeyEvent.keyCodeToString(keyCode))
+        return true
+    }
+
+    /**
+     * Issue #151: enables the high-priority [WheelMediaKeyReceiver] only on ECARX/GKUI
+     * head units, where the car's mediacenter swallows the wheel media keys. Everywhere
+     * else the receiver stays disabled (manifest default) and media-key routing is
+     * unchanged.
+     */
+    private fun updateWheelKeyReceiver(context: Context) {
+        val pm = context.packageManager
+        val component = android.content.ComponentName(context, WheelMediaKeyReceiver::class.java)
+        val wantEnabled = isEcarxGkui(pm)
+        val enabledState = pm.getComponentEnabledSetting(component)
+        if (wantEnabled && enabledState != android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_ENABLED) {
+            pm.setComponentEnabledSetting(
+                component,
+                android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
+                android.content.pm.PackageManager.DONT_KILL_APP,
+            )
+            Log.i(TAG, "wheel media-key receiver enabled for GKUI/ECARX")
+        }
+    }
+
+    private fun isEcarxGkui(pm: android.content.pm.PackageManager): Boolean {
+        if (runCatching { pm.getPackageInfo("ecarx.xsf.mediacenter", 0) }.isSuccess) return true
+        val manufacturer = Build.MANUFACTURER.orEmpty()
+        val brand = Build.BRAND.orEmpty()
+        return manufacturer.contains("ecarx", ignoreCase = true) ||
+            brand.contains("ecarx", ignoreCase = true)
     }
 
     /** Whether [next] changes what the media session's metadata shows; position and play state do not. */
