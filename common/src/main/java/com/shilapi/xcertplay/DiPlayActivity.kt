@@ -1543,6 +1543,15 @@ class DiPlayActivity : ComponentActivity() {
                 AirPlayPersistence.saveClusterMapEnabled(this, it)
                 render()
             }
+            // Issue #119: 悬浮小白点，点击打开 DiPlay（部分车机无法添加桌面快捷方式）
+            toggle(card, getString(R.string.floating_dot),
+                getString(R.string.floating_dot_description),
+                AirPlayPersistence.loadFloatingDot(this)) {
+                AirPlayPersistence.saveFloatingDot(this, it)
+                if (it && !FloatingDotOverlay.permitted(this)) openOverlayPermission()
+                else FloatingDotOverlay.setEnabled(this, it)
+                render()
+            }
             if (clusterMapEnabled) {
                 toggle(card, getString(R.string.center_map_card),
                     if (clusterDisplay != null || adbCluster) getString(R.string.center_map_card_description)
