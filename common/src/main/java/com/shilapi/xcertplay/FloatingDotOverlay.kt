@@ -84,37 +84,9 @@ object FloatingDotOverlay {
             title = "DiPlay dot"
         }
 
-        val dot = object : View(context) {
-            // DiPlay 品牌风格：蓝紫渐变底 + 白色 C 形 logo
-            private val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG)
-            private val logoPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                color = 0xFFFFFFFF.toInt()
-                style = Paint.Style.STROKE
-                strokeWidth = 5 * density
-                strokeCap = Paint.Cap.ROUND
-            }
-
-            override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
-                super.onSizeChanged(w, h, oldw, oldh)
-                bgPaint.shader = android.graphics.LinearGradient(
-                    0f, 0f, w.toFloat(), h.toFloat(),
-                    0xFF6B6BF5.toInt(), 0xFF4A4AD0.toInt(),
-                    android.graphics.Shader.TileMode.CLAMP,
-                )
-            }
-
-            override fun onDraw(canvas: Canvas) {
-                val cx = width / 2f
-                val cy = height / 2f
-                val r = width / 2f
-                // 渐变圆底
-                canvas.drawCircle(cx, cy, r, bgPaint)
-                // 白色 C 形：从 55° 到 305° 的圆弧，开口朝右
-                val logoR = r * 0.52f
-                val oval = android.graphics.RectF(
-                    cx - logoR, cy - logoR, cx + logoR, cy + logoR)
-                canvas.drawArc(oval, 55f, 250f, false, logoPaint)
-            }
+        // 直接用桌面 round 图标，和项目 UI 完全一致
+        val dot = android.widget.ImageView(context).apply {
+            setImageResource(com.shilapi.xcertplay.shared.R.mipmap.ic_launcher_round)
         }
 
         var downX = 0f
