@@ -93,4 +93,70 @@ class HciProtocolTest {
         val long = HciProtocol.encodeLocalName("x".repeat(300))
         assertEquals(248, long.size)
     }
+
+    @Test
+    fun aclEncodeParseRoundTrip() {
+        val data = byteArrayOf(0x01, 0x02, 0x03, 0x04)
+        val packet = HciProtocol.encodeAcl(handle = 0x0042, data = data)
+        // 0x02 | handle+flags LE | len LE | data
+        assertEquals(0x02, packet[0].toInt() and 0xFF)
+        val parsed = HciProtocol.parseAcl(packet)
+        assertEquals(0x0042, parsed?.handle)
+        assertArrayEquals(data, parsed?.data)
+    }
+
+    @Test
+    fun aclParseRejectsTruncated() {
+        assertNull(HciProtocol.parseAcl(byteArrayOf(0x02, 0x01)))
+        // Declared length exceeds buffer.
+        assertNull(
+            HciProtocol.parseAcl(byteArrayOf(0x02, 0x42, 0x20, 0x10, 0x00, 0x01, 0x02)),
+        )
+    }
+
+    @Test
+    fun l2capEncodeParseRoundTrip() {
+        val payload = byteArrayOf(0x0A, 0x0B, 0x0C)
+        val frame = HciProtocol.encodeL2cap(cid = 0x0040, payload = payload)
+        val parsed = HciProtocol.parseL2cap(frame)
+        assertEquals(0x0040, parsed?.cid)
+        assertArrayEquals(payload, parsed?.payload)
+    }
+
+    @Test
+    fun bdAddrEncodeParseRoundTrip() {
+        val addr = "A1:B2:C3:D4:E5:F6"
+        val wire = HciProtocol.encodeBdAddr(addr)
+        // LSB first on the wire.
+        assertArrayEquals(
+            byteArrayOf(0xF6.toByte(), 0xE5.toByte(), 0xD4.toByte(), 0xC3.toByte(), 0xB2.toByte(), 0xA1.toByte()),
+            wire,
+        )
+        assertEquals(addr, wire?.let { HciProtocol.parseBdAddrBytes(it) })
+    }
+
+    @Test
+    fun connectionCompleteParse() {
+        // 0x04 | 0x03 | len=11 | status=0 | handle=0x0042 LE | BD_ADDR LSB-first | link_type | encrypt
+        val packet = byteArrayOf(
+            0x04, 0x03, 0x0B, 0x00,
+            0x42, 0x00,
+            0xF6.toByte(), 0xE5.toByte(), 0xD4.toByte(), 0xC3.toByte(), 0xB2.toByte(), 0xA1.toByte(),
+            0x01, 0x00,
+        )
+        val event = HciProtocol.parseEvent(packet)
+        val cc = event?.let { HciProtocol.parseConnectionComplete(it) }
+        assertEquals(0, cc?.status)
+        assertEquals(0x0042, cc?.handle)
+        assertEquals("A1:B2:C3:D4:E5:F6", cc?.bdAddr)
+    }
+
+    @Test
+    fun rfcommDlciEncoding() {
+        // Server channel 1, initiator -> DLCI 3.
+        assertEquals(3, HciProtocol.rfcommDlci(1, initiator = true))
+        // Server channel 2, acceptor -> DLCI 4.
+        assertEquals(4, HciProtocol.rfcommDlci(2, initiator = false))
+        assertEquals(HciProtocol.RFCOMM_DLCI_CONTROL, 0)
+    }
 }
