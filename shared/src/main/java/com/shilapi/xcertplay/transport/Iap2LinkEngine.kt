@@ -237,8 +237,18 @@ class Iap2LinkEngine(
                         // Issue #94: iPhone silently ignoring SYNs (e.g. T3 wireless) used to
                         // retransmit forever. Fail fast so the session can retry with a fresh
                         // RFCOMM connection instead of hanging in "waiting for iAP2".
+                        // Issue #145/#146: the RFCOMM socket opens but the iPhone never
+                        // returns a single byte, so the Bluetooth data path itself is dead
+                        // (common on head units whose Bluetooth module only carries audio).
+                        // Say so explicitly instead of leaving a cryptic SYN message.
                         if (syncAttempts > MAX_SYNC_ATTEMPTS) {
-                            die("iAP2 link SYN unanswered after $syncAttempts attempts; peer not responding on RFCOMM")
+                            die(
+                                "iAP2 link SYN unanswered after $syncAttempts attempts; peer not responding on RFCOMM. " +
+                                    "The Bluetooth connection opened but the iPhone never answered: " +
+                                    "make sure the iPhone is paired and connected to the head unit in " +
+                                    "iPhone Settings > Bluetooth, and that the head unit's Bluetooth " +
+                                    "supports data (some head-unit Bluetooth modules only carry audio).",
+                            )
                         } else {
                             sendSynchronization()
                             if (state != State.DEAD) {
