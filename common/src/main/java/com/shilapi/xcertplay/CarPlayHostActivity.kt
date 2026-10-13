@@ -573,6 +573,13 @@ class CarPlayHostActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         NavigationWidgetUpdater.attach(applicationContext)
         CarPlayCallKeys.install(applicationContext)
+        // USB-Bluetooth dongle: route Numeric Comparison pairing requests to
+        // this Activity's dialog (no-op when no dongle stack is present).
+        runCatching {
+            UsbBtPairingDialog.installOn(
+                com.shilapi.xcertplay.bluetooth.CarPlayBluetoothManager.get(this),
+            )
+        }
         CenterMapOverlay.requestShow = ::showCenterMap
         MapMirrors.sink = mirrorSink
         MapMirrors.onChanged = mirrorsChanged
@@ -860,6 +867,7 @@ class CarPlayHostActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        UsbBtPairingUiRouter.register(this)
         val savedNightMode = AirPlayPersistence.loadCarPlayNightMode(this)
         val savedThreshold = AirPlayPersistence.loadAmbientLightThreshold(this)
         val savedDelay = AirPlayPersistence.loadAmbientDelaySeconds(this)
@@ -1273,6 +1281,7 @@ class CarPlayHostActivity : ComponentActivity() {
     }
 
     override fun onPause() {
+        UsbBtPairingUiRouter.unregister(this)
         nightModeController.pause()
         super.onPause()
     }

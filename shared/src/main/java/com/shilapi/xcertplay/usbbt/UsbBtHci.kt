@@ -249,19 +249,60 @@ class UsbBtHci private constructor(
      * Minimal bring-up so the dongle becomes usable and discoverable:
      * Reset -> Read_Local_Version -> Read_BD_ADDR -> Read_Buffer_Size ->
      * Write_Scan_Enable(inquiry+page) -> Write_Local_Name.
+     *
+     * Each step runs through [UsbBtTiming] with per-step timeout + retry and
+     * exponential backoff (see that file for the public references behind the
+     * policy values). Per-step durations are recorded into [InitResult.steps]
+     * for diagnostics. HCI_Reset is awaited via its Command Complete — never
+     * a hard-coded sleep.
      */
-    fun initialize(localName: String = "DiPlay"): HciResult<InitResult> {
+    fun initialize(
+        localName: String = "DiPlay",
+        firmwareLoader: UsbBtFirmwareLoader? = null,
+    ): HciResult<InitResult> {
         val steps = mutableListOf<String>()
+        val timings = mutableListOf<UsbBtTiming.StepTiming>()
         fun step(text: String) {
             steps.add(text)
             Log.i(TAG, text)
         }
 
-        val reset = sendCommand(OP_RESET)
+        fun <T> timed(
+            name: String,
+            policy: UsbBtTiming.RetryPolicy,
+            opcode: Int,
+            params: ByteArray = byteArrayOf(),
+        ): HciResult<ByteArray> {
+            val (result, timing) = UsbBtTiming.runTimed(name, policy) { timeout ->
+                when (val r = sendCommand(opcode, params, timeout)) {
+                    is HciResult.Ok -> Result.success(r.value)
+                    is HciResult.Failed -> Result.failure(RuntimeException(r.reason))
+                }
+            }
+            timings.add(timing)
+            step(
+                "$name: ${if (timing.success) "OK" else "FAIL"} " +
+                    "${timing.durationMs}ms attempts=${timing.attempts}" +
+                    (timing.lastError?.let { " (${it.take(80)})" } ?: ""),
+            )
+            return result.fold(
+                onSuccess = { HciResult.Ok(it) },
+                onFailure = { HciResult.Failed(timing.lastError ?: "failed") },
+            )
+        }
+
+        val reset = timed("HCI_Reset", UsbBtTiming.RESET_POLICY, OP_RESET)
         if (reset is HciResult.Failed) {
             // Several Broadcom/Realtek dongles ship without firmware and ignore
-            // HCI_Reset until their vendor blob is uploaded. Try to put the
-            // chip in download mode so the diagnostic says exactly that.
+            // HCI_Reset until their vendor blob is uploaded.
+            val fwResult = firmwareLoader?.loadForDevice(device.vendorId, device.productId)
+            if (fwResult is UsbBtFirmwareLoader.LoadResult.Uploaded) {
+                step("firmware uploaded (${fwResult.detail}); re-running init")
+                // Chip was reset by the upload; retry the whole sequence once.
+                return initialize(localName, null)
+            }
+            // No loader, no file, or upload failed: fall back to the old
+            // download-mode hint so diagnostics say exactly what is missing.
             val recovery = tryVendorFirmwareRecovery()
             val hint = if (recovery) {
                 "dongle entered firmware-download mode but no vendor firmware blob is bundled; " +
@@ -273,39 +314,46 @@ class UsbBtHci private constructor(
             step("firmware recovery attempted: $hint")
             return HciResult.Failed("HCI_Reset failed: ${reset.reason}; $hint")
         }
-        step("HCI_Reset ok")
 
-        when (val version = sendCommand(OP_READ_LOCAL_VERSION)) {
+        when (val version = timed("Read_Local_Version", UsbBtTiming.READ_POLICY, OP_READ_LOCAL_VERSION)) {
             is HciResult.Ok -> step("Local_Version ok (${version.value.size} return bytes)")
-            is HciResult.Failed -> step("Local_Version failed: ${version.reason}")
+            is HciResult.Failed -> step("Local_Version failed (non-fatal): ${version.reason}")
         }
 
-        val bdAddr = when (val addr = sendCommand(OP_READ_BD_ADDR)) {
+        val bdAddr = when (val addr = timed("Read_BD_ADDR", UsbBtTiming.READ_POLICY, OP_READ_BD_ADDR)) {
             is HciResult.Ok -> parseBdAddr(addr.value)?.also { step("BD_ADDR=$it") }
                 ?: run { step("Read_BD_ADDR returned malformed address"); null }
             is HciResult.Failed -> {
-                step("Read_BD_ADDR failed: ${addr.reason}")
                 return HciResult.Failed("Read_BD_ADDR failed: ${addr.reason}")
             }
         }
 
-        val bufferSize = when (val bs = sendCommand(OP_READ_BUFFER_SIZE)) {
+        val bufferSize = when (val bs = timed("Read_Buffer_Size", UsbBtTiming.READ_POLICY, OP_READ_BUFFER_SIZE)) {
             is HciResult.Ok -> parseBufferSize(bs.value)?.also {
                 step("Buffer_Size aclLen=${it.aclDataPacketLength} aclPkts=${it.totalNumAclPackets}")
             }
             is HciResult.Failed -> {
-                step("Read_Buffer_Size failed: ${bs.reason}")
+                step("Read_Buffer_Size failed (non-fatal): ${bs.reason}")
                 null
             }
         }
 
-        val scan = sendCommand(OP_WRITE_SCAN_ENABLE, byteArrayOf(SCAN_INQUIRY_AND_PAGE.toByte()))
+        val scan = timed(
+            "Write_Scan_Enable",
+            UsbBtTiming.WRITE_POLICY,
+            OP_WRITE_SCAN_ENABLE,
+            byteArrayOf(SCAN_INQUIRY_AND_PAGE.toByte()),
+        )
         if (scan is HciResult.Failed) {
             return HciResult.Failed("Write_Scan_Enable failed: ${scan.reason}")
         }
-        step("Scan_Enable inquiry+page ok")
 
-        val name = sendCommand(OP_WRITE_LOCAL_NAME, encodeLocalName(localName))
+        val name = timed(
+            "Write_Local_Name",
+            UsbBtTiming.WRITE_POLICY,
+            OP_WRITE_LOCAL_NAME,
+            encodeLocalName(localName),
+        )
         if (name is HciResult.Failed) {
             step("Write_Local_Name failed (non-fatal): ${name.reason}")
         } else {

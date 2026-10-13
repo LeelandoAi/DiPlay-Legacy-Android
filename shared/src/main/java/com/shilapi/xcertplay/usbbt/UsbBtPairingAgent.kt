@@ -41,6 +41,21 @@ class UsbBtPairingAgent(
 
         /** How long to wait for the UI decision before falling back to auto-confirm. */
         private const val UI_DECISION_TIMEOUT_MS = 30_000L
+
+        /**
+         * Extract the 6-digit Numeric Comparison value from a
+         * User_Confirmation_Request event: params = BD_ADDR(6) |
+         * numeric_value(4 LE). Returns null when params are too short.
+         * Pure function, unit-tested.
+         */
+        fun extractSixDigitNumber(params: ByteArray): Int? {
+            if (params.size < 10) return null
+            val raw = (params[6].toInt() and 0xFF) or
+                ((params[7].toInt() and 0xFF) shl 8) or
+                ((params[8].toInt() and 0xFF) shl 16) or
+                ((params[9].toInt() and 0xFF) shl 24)
+            return ((raw.toLong() and 0xFFFFFFFFL) % 1_000_000).toInt()
+        }
     }
 
     /**
@@ -136,17 +151,16 @@ class UsbBtPairingAgent(
             return
         }
         // Numeric value is a 32-bit LE integer; displayed as 6 decimal digits.
-        val raw = (event.params[6].toInt() and 0xFF) or
-            ((event.params[7].toInt() and 0xFF) shl 8) or
-            ((event.params[8].toInt() and 0xFF) shl 16) or
-            ((event.params[9].toInt() and 0xFF) shl 24)
-        val sixDigits = (raw.toLong() and 0xFFFFFFFFL) % 1_000_000
+        val sixDigits = extractSixDigitNumber(event.params) ?: run {
+            autoConfirm(bdAddr, event)
+            return
+        }
         val latch = CountDownLatch(1)
         var accepted = true // fallback on UI timeout: auto-confirm (Just Works)
         var decided = false
         Log.i(TAG, "Numeric Comparison for $bdAddr: %06d".format(sixDigits))
         runCatching {
-            callback.onNumericComparison(bdAddr, sixDigits.toInt()) { ok ->
+            callback.onNumericComparison(bdAddr, sixDigits) { ok ->
                 synchronized(latch) {
                     if (!decided) {
                         decided = true
