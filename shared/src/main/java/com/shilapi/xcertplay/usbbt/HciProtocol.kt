@@ -319,4 +319,69 @@ object HciProtocol {
         0x80.toByte(), 0x00.toByte(), 0x00.toByte(), 0x80.toByte(),
         0x5F.toByte(), 0x9B.toByte(), 0x34.toByte(), 0xFB.toByte(),
     )
+
+    // ------------------------------------------------------------------
+    // BR/EDR connection management (Phase 5).
+    // ------------------------------------------------------------------
+
+    /**
+     * Parse a BD_ADDR from the first 6 bytes (LSB first on the wire).
+     * Returns "XX:XX:XX:XX:XX:XX" (MSB first) or null when too short.
+     */
+    fun parseBdAddrBytes(data: ByteArray, at: Int = 0): String? {
+        if (at + 6 > data.size) return null
+        return (5 downTo 0).joinToString(":") { i ->
+            "%02X".format(data[at + i])
+        }
+    }
+
+    /**
+     * Encode a "XX:XX:XX:XX:XX:XX" address to 6 wire bytes (LSB first).
+     * Returns null when malformed.
+     */
+    fun encodeBdAddr(address: String): ByteArray? {
+        val parts = address.split(":")
+        if (parts.size != 6) return null
+        return runCatching {
+            ByteArray(6) { i -> parts[5 - i].toInt(16).toByte() }
+        }.getOrNull()
+    }
+
+    /**
+     * Encode HCI_Create_Connection params: BD_ADDR(6) | packet_type(2)=0xCC18
+     * | page_scan_repetition_mode(1)=1 | reserved(1)=0 | clock_offset(2)=0
+     * | allow_role_switch(1)=1.
+     */
+    fun encodeCreateConnection(bdAddr: ByteArray): ByteArray {
+        require(bdAddr.size == 6) { "BD_ADDR must be 6 bytes" }
+        return bdAddr +
+            byteArrayOf(0x18.toByte(), 0xCC.toByte(), 0x01, 0x00, 0x00, 0x00, 0x01)
+    }
+
+    /** Parsed Connection Complete (0x03) event. */
+    data class ConnectionComplete(
+        val status: Int,
+        val handle: Int,
+        val bdAddr: String?,
+    )
+
+    /** Parse Connection Complete: status(1) | handle(2) | BD_ADDR(6) | link_type(1) | encryption(1). */
+    fun parseConnectionComplete(event: HciEvent): ConnectionComplete? {
+        if (event.code != EVT_CONNECTION_COMPLETE || event.params.size < 11) return null
+        val handle = (event.params[1].toInt() and 0xFF) or
+            ((event.params[2].toInt() and 0xFF) shl 8) and 0x0FFF
+        return ConnectionComplete(
+            status = event.params[0].toInt() and 0xFF,
+            handle = handle,
+            bdAddr = parseBdAddrBytes(event.params, 3),
+        )
+    }
+
+    /** Encode HCI_Disconnect: handle(2) | reason(1)=0x13 (remote user terminated). */
+    fun encodeDisconnect(handle: Int): ByteArray =
+        byteArrayOf(
+            (handle and 0xFF).toByte(),
+            ((handle ushr 8) and 0xFF).toByte(),
+            0x13,
+        )
 }
