@@ -233,11 +233,13 @@ object HciProtocol {
     val OP_DISCONNECT = opcode(0x01, 0x0006)
     val OP_IO_CAPABILITY_REQUEST_REPLY = opcode(0x01, 0x002B)
     val OP_USER_CONFIRMATION_REQUEST_REPLY = opcode(0x01, 0x002C)
+    val OP_USER_CONFIRMATION_REQUEST_NEGATIVE_REPLY = opcode(0x01, 0x002D)
     val OP_WRITE_SIMPLE_PAIRING_MODE = opcode(0x03, 0x0056)
     val OP_SET_EVENT_MASK = opcode(0x03, 0x0001)
 
     // IO capability values (for IO_Capability_Request_Reply).
     const val IO_CAP_DISPLAY_ONLY = 0x00
+    const val IO_CAP_DISPLAY_YES_NO = 0x01
     const val IO_CAP_NO_INPUT_NO_OUTPUT = 0x03
 
     // ------------------------------------------------------------------
