@@ -267,13 +267,13 @@ class UsbBtHci private constructor(
             Log.i(TAG, text)
         }
 
-        fun <T> timed(
+        fun timed(
             name: String,
             policy: UsbBtTiming.RetryPolicy,
             opcode: Int,
             params: ByteArray = byteArrayOf(),
         ): HciResult<ByteArray> {
-            val (result, timing) = UsbBtTiming.runTimed(name, policy) { timeout ->
+            val (result, timing) = UsbBtTiming.runTimed<ByteArray>(name, policy) { timeout ->
                 when (val r = sendCommand(opcode, params, timeout)) {
                     is HciResult.Ok -> Result.success(r.value)
                     is HciResult.Failed -> Result.failure(RuntimeException(r.reason))

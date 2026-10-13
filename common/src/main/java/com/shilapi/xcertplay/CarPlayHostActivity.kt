@@ -576,7 +576,7 @@ class CarPlayHostActivity : ComponentActivity() {
         // USB-Bluetooth dongle: route Numeric Comparison pairing requests to
         // this Activity's dialog (no-op when no dongle stack is present).
         runCatching {
-            UsbBtPairingDialog.installOn(
+            UsbBtPairingUiRouter.installOn(
                 com.shilapi.xcertplay.bluetooth.CarPlayBluetoothManager.get(this),
             )
         }
