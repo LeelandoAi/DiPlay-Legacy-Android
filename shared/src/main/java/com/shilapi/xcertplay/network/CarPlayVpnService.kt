@@ -171,7 +171,7 @@ class CarPlayVpnService : VpnService() {
             } ?: throw IOException("VpnService.establish returned null")
             tun = tunFd
             runCatching { listener.onDebugLog("wired VPN TUN established address=$linkLocal mtu=$TUN_MTU") }
-            if (Build.VERSION.SDK_INT < 21) LegacyTunBlocking.enable(tunFd)
+            if (realSdkInt() < 21) LegacyTunBlocking.enable(tunFd)
 
             val ipv6Bridge = Ipv6NcmBridge(
                 ncm = ncm,

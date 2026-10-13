@@ -4797,7 +4797,8 @@ class CarPlayHostActivity : ComponentActivity() {
     private fun observeVideoWindow(texture: TextureView) {
         val probe = object : ViewTreeObserver.OnPreDrawListener {
             override fun onPreDraw(): Boolean {
-                if (!texture.isAttachedToWindow) return true
+                // ViewCompat handles API < 19 where View.isAttachedToWindow doesn't exist.
+                if (!androidx.core.view.ViewCompat.isAttachedToWindow(texture)) return true
                 removeVideoSurfaceProbe()
                 if (isDestroyed || videoView !== texture) return true
                 val mode = carPlayVideoSurfaceMode(texture.isHardwareAccelerated, smoothVideo, directSurfaceView)

@@ -28,7 +28,7 @@ android {
 
     defaultConfig {
         applicationId = "com.shihab.diplay"
-        minSdk = 19
+        minSdk = 17
         targetSdk = 37
         multiDexEnabled = true
         multiDexKeepProguard = file("multidex-config.pro")
