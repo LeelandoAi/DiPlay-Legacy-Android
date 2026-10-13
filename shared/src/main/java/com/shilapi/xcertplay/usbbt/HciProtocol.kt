@@ -167,4 +167,156 @@ object HciProtocol {
         raw.copyInto(out, 0, 0, minOf(raw.size, out.size))
         return out
     }
+
+    // ------------------------------------------------------------------
+    // HCI ACL data packets (Phase 3).
+    // ------------------------------------------------------------------
+
+    /** Parsed HCI ACL data packet. */
+    data class AclPacket(val handle: Int, val flags: Int, val data: ByteArray) {
+        override fun equals(other: Any?): Boolean {
+            if (this === other) return true
+            if (other !is AclPacket) return false
+            return handle == other.handle && flags == other.flags && data.contentEquals(other.data)
+        }
+
+        override fun hashCode(): Int = 31 * (31 * handle + flags) + data.contentHashCode()
+    }
+
+    /** PB flag: first fragment of an L2CAP packet (start). */
+    const val ACL_PB_FIRST_FLUSHABLE = 0x02
+
+    /**
+     * Parse one HCI ACL packet: 0x02 | handle+flags (2 LE) | data_len (2 LE) | data.
+     * Returns null when [length] bytes do not hold a well-formed packet.
+     */
+    fun parseAcl(packet: ByteArray, length: Int = packet.size): AclPacket? {
+        if (length < 5 || length > packet.size) return null
+        if (packet[0].toInt() and 0xFF != HCI_ACL_PACKET) return null
+        val handleFlags = (packet[1].toInt() and 0xFF) or ((packet[2].toInt() and 0xFF) shl 8)
+        val dataLen = (packet[3].toInt() and 0xFF) or ((packet[4].toInt() and 0xFF) shl 8)
+        if (5 + dataLen > length) return null
+        return AclPacket(
+            handle = handleFlags and 0x0FFF,
+            flags = (handleFlags ushr 12) and 0x0F,
+            data = packet.copyOfRange(5, 5 + dataLen),
+        )
+    }
+
+    /**
+     * Encode an HCI ACL packet: 0x02 | handle+PB (2 LE) | data_len (2 LE) | data.
+     */
+    fun encodeAcl(handle: Int, data: ByteArray): ByteArray {
+        val out = ByteArray(5 + data.size)
+        out[0] = HCI_ACL_PACKET.toByte()
+        val handleFlags = (handle and 0x0FFF) or (ACL_PB_FIRST_FLUSHABLE shl 12)
+        out[1] = (handleFlags and 0xFF).toByte()
+        out[2] = ((handleFlags ushr 8) and 0xFF).toByte()
+        out[3] = (data.size and 0xFF).toByte()
+        out[4] = ((data.size ushr 8) and 0xFF).toByte()
+        data.copyInto(out, 5)
+        return out
+    }
+
+    // ------------------------------------------------------------------
+    // HCI events needed for BR/EDR connection management (Phase 3/4).
+    // ------------------------------------------------------------------
+    const val EVT_CONNECTION_COMPLETE = 0x03
+    const val EVT_DISCONNECTION_COMPLETE = 0x05
+    const val EVT_NUM_COMPLETED_PACKETS = 0x13
+    const val EVT_IO_CAPABILITY_REQUEST = 0x31
+    const val EVT_USER_CONFIRMATION_REQUEST = 0x33
+    const val EVT_SIMPLE_PAIRING_COMPLETE = 0x36
+    const val EVT_LINK_KEY_NOTIFICATION = 0x18
+
+    val OP_CREATE_CONNECTION = opcode(0x01, 0x0005)
+    val OP_DISCONNECT = opcode(0x01, 0x0006)
+    val OP_IO_CAPABILITY_REQUEST_REPLY = opcode(0x01, 0x002B)
+    val OP_USER_CONFIRMATION_REQUEST_REPLY = opcode(0x01, 0x002C)
+    val OP_WRITE_SIMPLE_PAIRING_MODE = opcode(0x03, 0x0056)
+    val OP_SET_EVENT_MASK = opcode(0x03, 0x0001)
+
+    // IO capability values (for IO_Capability_Request_Reply).
+    const val IO_CAP_DISPLAY_ONLY = 0x00
+    const val IO_CAP_NO_INPUT_NO_OUTPUT = 0x03
+
+    // ------------------------------------------------------------------
+    // L2CAP (Bluetooth Core Spec Vol 3, Part A).
+    // ------------------------------------------------------------------
+    const val L2CAP_CID_SIGNALING = 0x0001
+    const val L2CAP_PSM_SDP = 0x0001
+    const val L2CAP_PSM_RFCOMM = 0x0003
+
+    // L2CAP signaling command codes.
+    const val L2CAP_CMD_CONNECTION_REQ = 0x02
+    const val L2CAP_CMD_CONNECTION_RSP = 0x03
+    const val L2CAP_CMD_CONFIG_REQ = 0x04
+    const val L2CAP_CMD_CONFIG_RSP = 0x05
+    const val L2CAP_CMD_DISCONNECTION_REQ = 0x06
+    const val L2CAP_CMD_DISCONNECTION_RSP = 0x07
+
+    // L2CAP Connection Response result codes.
+    const val L2CAP_CONN_SUCCESS = 0x0000
+    const val L2CAP_CONN_PENDING = 0x0001
+
+    /**
+     * Encode an L2CAP packet: length (2 LE) | CID (2 LE) | payload.
+     * Length covers the payload only (not the 4-byte header).
+     */
+    fun encodeL2cap(cid: Int, payload: ByteArray): ByteArray {
+        val out = ByteArray(4 + payload.size)
+        out[0] = (payload.size and 0xFF).toByte()
+        out[1] = ((payload.size ushr 8) and 0xFF).toByte()
+        out[2] = (cid and 0xFF).toByte()
+        out[3] = ((cid ushr 8) and 0xFF).toByte()
+        payload.copyInto(out, 4)
+        return out
+    }
+
+    /** Parsed L2CAP packet. Null when malformed. */
+    data class L2capPacket(val cid: Int, val payload: ByteArray)
+
+    fun parseL2cap(data: ByteArray): L2capPacket? {
+        if (data.size < 4) return null
+        val length = (data[0].toInt() and 0xFF) or ((data[1].toInt() and 0xFF) shl 8)
+        if (4 + length > data.size) return null
+        val cid = (data[2].toInt() and 0xFF) or ((data[3].toInt() and 0xFF) shl 8)
+        return L2capPacket(cid = cid, payload = data.copyOfRange(4, 4 + length))
+    }
+
+    // ------------------------------------------------------------------
+    // RFCOMM (Bluetooth Core Spec, RFCOMM with TS 07.10).
+    // ------------------------------------------------------------------
+
+    /** RFCOMM frame types. */
+    const val RFCOMM_SABM = 0x2F
+    const val RFCOMM_UA = 0x63
+    const val RFCOMM_DM = 0x0F
+    const val RFCOMM_UIH = 0xEF
+    const val RFCOMM_MCC = 0x33
+
+    /** RFCOMM MCC message types. */
+    const val RFCOMM_MCC_PN = 0x20
+    const val RFCOMM_MCC_MSC = 0x38
+
+    /** DLCI 0 is the RFCOMM session control channel. */
+    const val RFCOMM_DLCI_CONTROL = 0
+
+    /** RFCOMM server channel from a DLCI: dlci = channel * 2 (+1 for initiator). */
+    fun rfcommDlci(serverChannel: Int, initiator: Boolean): Int =
+        serverChannel * 2 + if (initiator) 1 else 0
+
+    // ------------------------------------------------------------------
+    // SDP (Bluetooth Core Spec Vol 3, Part B).
+    // ------------------------------------------------------------------
+    const val SDP_PDU_SERVICE_SEARCH_ATTR_REQ = 0x06
+    const val SDP_PDU_SERVICE_SEARCH_ATTR_RSP = 0x07
+
+    /** iAP2 service class UUID (128-bit). Public CarPlay accessory UUID. */
+    val IAP2_UUID_BYTES: ByteArray = byteArrayOf(
+        0x00.toByte(), 0x00.toByte(), 0x00.toByte(), 0x00.toByte(),
+        0x00.toByte(), 0x00.toByte(), 0x10.toByte(), 0x00.toByte(),
+        0x80.toByte(), 0x00.toByte(), 0x00.toByte(), 0x80.toByte(),
+        0x5F.toByte(), 0x9B.toByte(), 0x34.toByte(), 0xFB.toByte(),
+    )
 }

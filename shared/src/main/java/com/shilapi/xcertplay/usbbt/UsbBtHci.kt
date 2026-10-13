@@ -310,4 +310,48 @@ class UsbBtHci private constructor(
         runCatching { connection.close() }
         Log.i(TAG, "HCI closed")
     }
+
+    /**
+     * Send an L2CAP packet (already framed by [HciProtocol.encodeL2cap]) over
+     * the ACL bulk-OUT endpoint. Returns false when the transfer failed.
+     *
+     * Phase 3: used by the L2CAP layer. Blocking; call from a background thread.
+     */
+    fun sendAcl(handle: Int, l2capPacket: ByteArray, timeoutMs: Int = 2_000): Boolean {
+        val packet = runCatching { HciProtocol.encodeAcl(handle, l2capPacket) }.getOrElse {
+            Log.w(TAG, "ACL encode failed: ${it.message}")
+            return false
+        }
+        val sent = connection.bulkTransfer(aclOutEndpoint, packet, packet.size, timeoutMs)
+        if (sent != packet.size) {
+            Log.w(TAG, "ACL bulkTransfer sent $sent/${packet.size}")
+            return false
+        }
+        return true
+    }
+
+    /**
+     * Read one HCI ACL packet from the bulk-IN endpoint. Returns null on
+     * timeout or when the packet is malformed. Blocking up to [timeoutMs].
+     *
+     * Phase 3: the L2CAP layer polls this in its receive loop.
+     */
+    fun pollAcl(timeoutMs: Int = 500): HciProtocol.AclPacket? {
+        val buf = ByteArray(1024)
+        val read = connection.bulkTransfer(aclInEndpoint, buf, buf.size, timeoutMs)
+        if (read <= 0) return null
+        return HciProtocol.parseAcl(buf, read)
+    }
+
+    /**
+     * Poll one HCI event without consuming it for a pending command.
+     * Used by the connection/pairing machinery for async events
+     * (Connection Complete, IO Capability Request, ...).
+     */
+    fun pollEvent(timeoutMs: Int = 500): HciProtocol.HciEvent? {
+        val buf = ByteArray(MAX_EVENT_PACKET_SIZE)
+        val read = connection.bulkTransfer(eventEndpoint, buf, buf.size, timeoutMs)
+        if (read <= 0) return null
+        return HciProtocol.parseEvent(buf, read)
+    }
 }
