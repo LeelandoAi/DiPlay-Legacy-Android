@@ -517,7 +517,27 @@ class CarPlayVpnService : VpnService() {
                 message.contains("fwmark rule add", ignoreCase = true) &&
                     message.contains("No such device", ignoreCase = true)
             }
-            if (!wedged) return error
+            if (!wedged) {
+                // Issue #137: some 4.4.x ROMs (e.g. Hangsheng on 4.4.3) have a broken
+                // VPN framework service: establish() dies inside Parcel.readException
+                // with a NullPointerException. The app cannot repair the system VPN
+                // service; translate into an actionable hint.
+                val brokenVpnService = generateSequence(error) { it.cause }.take(8).any { cause ->
+                    cause is NullPointerException &&
+                        cause.stackTrace.any { it.className == "android.os.Parcel" &&
+                            it.methodName == "readException" }
+                }
+                if (!brokenVpnService) return error
+                return IOException(
+                    "VPN establish failed: the head unit's system VPN service is broken " +
+                        "(NullPointerException inside Parcel.readException); the ROM's VPN " +
+                        "framework cannot create the TUN interface. Reboot the head unit and " +
+                        "retry; if it persists, the ROM's VPN service is unusable and wired " +
+                        "CarPlay cannot work on this ROM. " +
+                        "Original error: ${error.message}",
+                    error,
+                )
+            }
             return IOException(
                 "VPN establish failed: the system netd rejected its own fwmark rule for the " +
                     "TUN interface (\"No such device\"); the head unit's VPN state is wedged " +
