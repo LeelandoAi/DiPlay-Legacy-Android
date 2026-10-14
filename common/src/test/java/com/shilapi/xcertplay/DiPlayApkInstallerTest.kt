@@ -31,6 +31,7 @@ class DiPlayApkInstallerTest {
         assertTrue(legacyIntents.all { it.data?.scheme == "file" })
         assertEquals("application/vnd.android.package-archive", legacyIntents[0].type)
         assertTrue(DiPlayApkInstaller.supportsFileInstall(19, "4.4.4"))
+        assertTrue(DiPlayApkInstaller.supportsFileInstall(17, "4.2.2"))
         assertFalse(DiPlayApkInstaller.supportsFileInstall(28, "4.4.4"))
     }
 
