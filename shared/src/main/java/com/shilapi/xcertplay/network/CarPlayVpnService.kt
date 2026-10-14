@@ -543,7 +543,7 @@ class CarPlayVpnService : VpnService() {
                         mfi = current.mfi,
                         listener = object : AirPlaySessionListener by current.listener {
                             override fun onSessionActive(session: AirPlaySession) {
-                                runCatching { listener.onDebugLog("WIRED-CHAIN [16/16] SUCCESS: AirPlay session active") }
+                                runCatching { current.listener.onDebugLog("WIRED-CHAIN [16/16] SUCCESS: AirPlay session active") }
                                 if (current.listenerIdentity == null || !internalPeer) current.listener.onSessionActive(session)
                             }
 

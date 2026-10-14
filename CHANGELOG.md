@@ -2,7 +2,9 @@
 
 - Remove the direct API 21 AEADBadTagException reference so AirPlay crypto verifies on Android 4.2, preserving authentication-tag rejection.
 - Use a window-token attachment check on Android 4.2/4.3 to avoid an API 19 method call when opening the connection screen.
+- Include in-band SPS/PPS with the first H.264 frame on Android 4.2 for decoders that ignore separate codec-format parameters.
 - Try enabling the hybrid Bluetooth adapter before wireless startup, with a bounded wait and the existing failure message if it stays off.
+- Add wired and wireless connection-stage diagnostics from USB/Bluetooth through AirPlay session startup.
 - Add legacy Android instrumentation coverage for authenticated decryption and tampered-ciphertext rejection.
 
 See [v0.2.61 release notes](docs/RELEASE-NOTES-0.2.61.md) for validation and device-testing limits.
