@@ -141,7 +141,13 @@ class UsbBtBluetoothAdapter(
         }
         awaitingPermission.set(false)
         val opened = UsbBtHci.open(mgr, dongle.device) ?: return false
-        when (val init = opened.initialize()) {
+        // Wire up the firmware loader: dongles that ship with empty patchram
+        // ignore HCI_Reset until their vendor blob is uploaded. Previously
+        // initialize() was called without a loader, so the upload path in
+        // UsbBtHci was dead code and even a bundled firmware file was never
+        // used (P2-5).
+        val firmwareLoader = UsbBtFirmwareLoader(opened, appContext.assets)
+        when (val init = opened.initialize(firmwareLoader = firmwareLoader)) {
             is UsbBtHci.HciResult.Failed -> {
                 Log.w(TAG, "enable: HCI init failed: ${init.reason}")
                 runCatching { opened.close() }
