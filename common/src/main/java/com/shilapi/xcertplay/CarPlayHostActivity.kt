@@ -61,6 +61,7 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.shilapi.xcertplay.airplay.CarPlayMediaButton
+import com.shilapi.xcertplay.compat.realSdkInt
 import com.shilapi.xcertplay.airplay.AirPlayConfig
 import com.shilapi.xcertplay.airplay.AirPlayDisplaySettings
 import com.shilapi.xcertplay.airplay.AirPlayPhysicalSizeBasis
@@ -587,7 +588,7 @@ class CarPlayHostActivity : ComponentActivity() {
         }
         WheelKeyService.restoreIfNeeded(this)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1) {
-            val displayManager = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val displayManager = if (realSdkInt() >= Build.VERSION_CODES.M) {
                 getSystemService(android.hardware.display.DisplayManager::class.java)
             } else {
                 @Suppress("DEPRECATION")
@@ -1380,7 +1381,7 @@ class CarPlayHostActivity : ComponentActivity() {
         com.shilapi.xcertplay.hud.BydNavigationOutputs.setTurnOverlayListener(null)
         if (Build.VERSION.SDK_INT >= 21) clusterMonitor?.stop()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1) {
-            val displayManager = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val displayManager = if (realSdkInt() >= Build.VERSION_CODES.M) {
                 getSystemService(android.hardware.display.DisplayManager::class.java)
             } else {
                 @Suppress("DEPRECATION")
@@ -4241,10 +4242,10 @@ class CarPlayHostActivity : ComponentActivity() {
         }
         try {
             val service = Intent(this, DiPlaySessionService::class.java)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(service)
+            if (realSdkInt() >= Build.VERSION_CODES.O) startForegroundService(service)
             else startService(service)
             next.start()
-        } catch (error: RuntimeException) {
+        } catch (error: Throwable) {
             appendLog("Connection could not start: ${error.javaClass.simpleName}")
             shutdown(false, "foreground service could not start")
             setConnectionStage(getString(R.string.could_not_start_carplay_return_to_diplay_and_check_app_per))

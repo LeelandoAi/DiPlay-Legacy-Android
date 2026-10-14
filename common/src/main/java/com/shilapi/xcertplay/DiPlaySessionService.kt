@@ -12,6 +12,7 @@ import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
+import com.shilapi.xcertplay.compat.realSdkInt
 import com.shilapi.xcertplay.host.R
 
 /** Keeps an explicitly started connection alive when another car app is in the foreground. */
@@ -24,7 +25,7 @@ class DiPlaySessionService : Service() {
             return START_NOT_STICKY
         }
         val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        if (realSdkInt() >= Build.VERSION_CODES.O) {
             manager.createNotificationChannel(
                 NotificationChannel(CHANNEL, "CarPlay connection", NotificationManager.IMPORTANCE_LOW),
             )
@@ -33,7 +34,7 @@ class DiPlaySessionService : Service() {
             (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0)
         val open = PendingIntent.getActivity(this, 0, Intent(this, CarPlayHostActivity::class.java), pendingFlags)
         val stop = PendingIntent.getService(this, 1, Intent(this, DiPlaySessionService::class.java).setAction(ACTION_STOP), pendingFlags)
-        val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        val builder = if (realSdkInt() >= Build.VERSION_CODES.O) {
             Notification.Builder(this, CHANNEL)
         } else {
             @Suppress("DEPRECATION")
@@ -44,7 +45,7 @@ class DiPlaySessionService : Service() {
             .setContentTitle("DiPlay")
             .setContentText("CarPlay connection running")
             .setContentIntent(open).setOngoing(true)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+        if (realSdkInt() >= Build.VERSION_CODES.M) {
             builder.addAction(Notification.Action.Builder(null, "Disconnect", stop).build())
         } else {
             @Suppress("DEPRECATION")
