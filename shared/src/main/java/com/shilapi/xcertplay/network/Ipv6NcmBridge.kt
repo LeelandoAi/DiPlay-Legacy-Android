@@ -200,8 +200,21 @@ class Ipv6NcmBridge(
                         ((frame[ipv6.payloadOffset + 42].toInt() and 0xff) shl 8) or
                             (frame[ipv6.payloadOffset + 43].toInt() and 0xff)
                     } else -1
+                    // Issue #155/#160: a SYN whose destination is not the TUN address,
+                    // or whose TCP checksum is bad, is dropped by the kernel silently
+                    // (no SYN_RECV, no RST) — exactly the observed signature. Record
+                    // both so the next report can rule them in or out.
+                    val dstLocal = ipv6.payloadLength >= 40 &&
+                        frame.copyOfRange(
+                            ipv6.payloadOffset + 24,
+                            ipv6.payloadOffset + 40,
+                        ).contentEquals(hostLinkLocalBytes)
+                    val checksumOk = tcpChecksumValid(frame, ipv6.payloadOffset, ipv6.payloadLength)
                     runCatching {
-                        onDebugLog("ncm tun inject tcp bytes=${ipv6.payloadLength} dstPort=$dstPort ok")
+                        onDebugLog(
+                            "ncm tun inject tcp bytes=${ipv6.payloadLength} dstPort=$dstPort " +
+                                "dstLocal=$dstLocal tcpChecksum=${if (checksumOk) "ok" else "bad"} ok",
+                        )
                     }
                 }
             }
@@ -330,6 +343,34 @@ class Ipv6NcmBridge(
 
     private fun ByteArray.u16(offset: Int): Int =
         ((this[offset].toInt() and 0xff) shl 8) or (this[offset + 1].toInt() and 0xff)
+
+    /**
+     * Validates the TCP checksum of one IPv6 packet ([offset]/[length] view into
+     * [frame]). The pseudo-header (source, destination, next header, TCP length)
+     * plus the whole TCP segment — checksum field included — must fold to 0xffff
+     * for a valid checksum. Returns false for truncated input.
+     */
+    private fun tcpChecksumValid(frame: ByteArray, offset: Int, length: Int): Boolean {
+        if (length < 40 + 20 || offset < 0 || offset + length > frame.size) return false
+        val tcpStart = offset + 40
+        val tcpLength = length - 40
+        var sum = 0L
+        fun addWords(start: Int, bytes: Int) {
+            var pos = start
+            val end = start + bytes
+            while (pos + 1 < end) {
+                sum += (((frame[pos].toInt() and 0xff) shl 8) or (frame[pos + 1].toInt() and 0xff)).toLong()
+                pos += 2
+            }
+            if (pos < end) sum += ((frame[pos].toInt() and 0xff) shl 8).toLong()
+        }
+        addWords(offset + 8, 32) // pseudo-header: source + destination
+        sum += 6 // three zero bytes + next header (TCP)
+        sum += tcpLength.toLong() // TCP length as 32 bits; high half is zero
+        addWords(tcpStart, tcpLength)
+        while (sum ushr 16 != 0L) sum = (sum and 0xffff) + (sum ushr 16)
+        return sum == 0xffffL
+    }
 
     private companion object {
         const val TAG = "xcertplay-usb"
