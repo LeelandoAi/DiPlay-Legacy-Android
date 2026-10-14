@@ -37,6 +37,13 @@ class WiredMdnsResponder(
     }
     private val serviceInstance = "$deviceName._airplay._tcp.local"
     private val serviceInstanceLower = serviceInstance.lowercase()
+    /**
+     * Issue #152: the iPhone also discovers the audio endpoint via _raop._tcp.
+     * Answer those queries with a parallel RAOP service instance so the follow-up
+     * SRV/TXT lookups resolve to this accessory.
+     */
+    private val raopInstance = "$deviceName._raop._tcp.local"
+    private val raopInstanceLower = raopInstance.lowercase()
     private val hostName = "${sanitizeHostName(deviceName)}.local"
     private val hostNameLower = hostName.lowercase()
 
@@ -83,6 +90,28 @@ class WiredMdnsResponder(
     }
 
     /**
+     * Returns the first question name of an mDNS query packet, or null when the
+     * packet is not an mDNS query. Lets the caller log what the iPhone actually
+     * asked for when no answer matched (issue #152).
+     */
+    fun unmatchedQueryName(frame: ByteArray, offset: Int, length: Int): String? {
+        if (length < IPV6_HEADER_BYTES + UDP_HEADER_BYTES + DNS_HEADER_BYTES) return null
+        if (offset < 0 || offset + length > frame.size) return null
+        if ((frame[offset].toInt() ushr 4 and 0x0f) != 6) return null
+        if ((frame[offset + IPV6_NEXT_HEADER_OFFSET].toInt() and 0xff) != UDP_NEXT_HEADER) return null
+        if (u16(frame, offset + IPV6_HEADER_BYTES + 2) != MDNS_PORT) return null
+        val udpLength = u16(frame, offset + IPV6_HEADER_BYTES + 4)
+        val dnsLength = udpLength - UDP_HEADER_BYTES
+        if (dnsLength < DNS_HEADER_BYTES || offset + IPV6_HEADER_BYTES + udpLength > offset + length) return null
+        val query = frame.copyOfRange(
+            offset + IPV6_HEADER_BYTES + UDP_HEADER_BYTES,
+            offset + IPV6_HEADER_BYTES + UDP_HEADER_BYTES + dnsLength,
+        )
+        val parsed = parseQuestions(query) ?: return null
+        return parsed.questions.firstOrNull()?.name
+    }
+
+    /**
      * Builds the IPv6/UDP packet carrying the DNS answer, or null when the query does
      * not ask for this accessory's AirPlay service.
      */
@@ -91,20 +120,27 @@ class WiredMdnsResponder(
         require(querierPort in 1..65535) { "querierPort must be in 1..65535" }
         val parsed = parseQuestions(query) ?: return null
         var wantPtr = false
-        var wantSrvTxt = false
+        var wantRaopPtr = false
         var wantAaaa = false
+        val srvTxtInstances = LinkedHashSet<String>()
         for (question in parsed.questions) {
             val name = question.name.lowercase()
             when {
                 name == AIRPLAY_SERVICE &&
                     (question.type == QTYPE_PTR || question.type == QTYPE_ANY) -> {
                     wantPtr = true
-                    wantSrvTxt = true
+                    srvTxtInstances += serviceInstance
                     wantAaaa = true
                 }
-                name == serviceInstanceLower &&
+                name == RAOP_SERVICE &&
+                    (question.type == QTYPE_PTR || question.type == QTYPE_ANY) -> {
+                    wantRaopPtr = true
+                    srvTxtInstances += raopInstance
+                    wantAaaa = true
+                }
+                (name == serviceInstanceLower || name == raopInstanceLower) &&
                     (question.type == QTYPE_SRV || question.type == QTYPE_TXT || question.type == QTYPE_ANY) -> {
-                    wantSrvTxt = true
+                    srvTxtInstances += if (name == raopInstanceLower) raopInstance else serviceInstance
                     wantAaaa = true
                 }
                 name == hostNameLower &&
@@ -113,15 +149,18 @@ class WiredMdnsResponder(
                 }
             }
         }
-        if (!wantPtr && !wantSrvTxt && !wantAaaa) return null
+        if (!wantPtr && !wantRaopPtr && srvTxtInstances.isEmpty() && !wantAaaa) return null
 
         val answers = ArrayList<ByteArray>(4)
         if (wantPtr) {
             answers += dnsRecord(encodeName(AIRPLAY_SERVICE), QTYPE_PTR, encodeName(serviceInstance))
         }
-        if (wantSrvTxt) {
-            answers += dnsRecord(encodeName(serviceInstance), QTYPE_SRV, srvRdata())
-            answers += dnsRecord(encodeName(serviceInstance), QTYPE_TXT, txtRdata())
+        if (wantRaopPtr) {
+            answers += dnsRecord(encodeName(RAOP_SERVICE), QTYPE_PTR, encodeName(raopInstance))
+        }
+        for (instance in srvTxtInstances) {
+            answers += dnsRecord(encodeName(instance), QTYPE_SRV, srvRdata())
+            answers += dnsRecord(encodeName(instance), QTYPE_TXT, txtRdata())
         }
         if (wantAaaa) {
             answers += dnsRecord(encodeName(hostName), QTYPE_AAAA, hostAddressBytes)
@@ -339,6 +378,7 @@ class WiredMdnsResponder(
         private const val MAX_NAME_STEPS = 32
         private const val MAX_LABEL_BYTES = 63
         private const val AIRPLAY_SERVICE = "_airplay._tcp.local"
+        private const val RAOP_SERVICE = "_raop._tcp.local"
 
         private fun sanitizeHostName(deviceName: String): String {
             val cleaned = deviceName.map { c ->

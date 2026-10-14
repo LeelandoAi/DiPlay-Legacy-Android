@@ -69,6 +69,8 @@ class Ipv6NcmBridge(
     private var outboundLogBudget = 24
     /** Issue #148: keep wired mDNS answers visible without spamming the report. */
     private var mdnsAnswerLogBudget = 6
+    /** Issue #152: keep unmatched wired mDNS query names visible without spamming. */
+    private var unmatchedMdnsLogBudget = 6
     /**
      * Issue #155/#123: the iPhone's TCP SYNs reach the NCM bridge but the kernel never
      * answers on some 4.4 kernels. Count TCP packets written into the TUN so a later
@@ -151,7 +153,8 @@ class Ipv6NcmBridge(
                 // query must not also be injected into the TUN: nothing on the TUN
                 // answers it usefully, and a duplicate multicast reply would only
                 // confuse the iPhone's resolver.
-                val mdnsAnswer = mdnsResponder?.answerFrame(
+                val responder = mdnsResponder
+                val mdnsAnswer = responder?.answerFrame(
                     frame, ipv6.payloadOffset, ipv6.payloadLength, hostMac, ipv6.sourceMac,
                 )
                 if (mdnsAnswer != null) {
@@ -164,6 +167,15 @@ class Ipv6NcmBridge(
                         runCatching { onDebugLog(answerMsg) }
                     }
                     continue
+                }
+                // Issue #152: when no answer matched, record what the iPhone actually
+                // asked for so the next report shows the real query names.
+                if (responder != null && unmatchedMdnsLogBudget > 0) {
+                    val queryName = responder.unmatchedQueryName(frame, ipv6.payloadOffset, ipv6.payloadLength)
+                    if (queryName != null) {
+                        unmatchedMdnsLogBudget--
+                        runCatching { onDebugLog("ncm wired mdns query not answered name=$queryName") }
+                    }
                 }
 
                 if (!loggedInbound) {
