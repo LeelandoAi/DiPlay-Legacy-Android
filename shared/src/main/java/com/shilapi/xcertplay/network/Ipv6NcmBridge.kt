@@ -165,7 +165,7 @@ class Ipv6NcmBridge(
                     }
                     if (mdnsAnswerLogBudget > 0) {
                         mdnsAnswerLogBudget--
-                        val answerMsg = "ncm answered wired mdns _airplay query frames=${mdnsAnswers.size} " +
+                        val answerMsg = "WIRED-CHAIN [15/16] mDNS _airplay query answered frames=${mdnsAnswers.size} " +
                             "bytes=${mdnsAnswers.sumOf { it.size }}"
                         Log.i(TAG, answerMsg)
                         runCatching { onDebugLog(answerMsg) }
@@ -205,7 +205,14 @@ class Ipv6NcmBridge(
                     runCatching { onDebugLog("ncm inbound diag ${frame.diagnosticSummary(ipv6.payloadOffset)}") }
                 }
                 val isTcp = inboundNextHeader == 6
-                if (isTcp) injectedTcpPackets.incrementAndGet()
+                if (isTcp) {
+                    val tcpCount = injectedTcpPackets.incrementAndGet()
+                    if (tcpCount == 1) {
+                        val tcpMsg = "WIRED-CHAIN [16/16] first TCP packet injected to TUN (iPhone -> 7000)"
+                        Log.i(TAG, tcpMsg)
+                        runCatching { onDebugLog(tcpMsg) }
+                    }
+                }
                 output.write(frame, ipv6.payloadOffset, ipv6.payloadLength)
                 if (isTcp && tunInjectLogBudget > 0) {
                     // Issue #123: prove the SYN crossed into the kernel's TUN. A throw

@@ -1942,6 +1942,7 @@ class CarPlayController(
                 is IphoneUsbHost.PermissionResult.Granted -> {
                     // The system broadcast and the polling fallback can both observe the grant.
                     if (!permissionGrant.compareAndSet(false, true)) return
+                    wiredChain(2, "USB permission granted")
                     debugLog("wired iPhone USB permission granted")
                     permissionPollGeneration++
                     when (phase) {
@@ -2102,6 +2103,7 @@ class CarPlayController(
     }
 
     private fun onIphoneAttached(device: UsbDevice) {
+        wiredChain(1, "USB iPhone attached vid=0x${device.vendorId.toString(16)} pid=0x${device.productId.toString(16)}")
         when (phase) {
             Phase.REENUMERATION, Phase.IPHONE -> {
                 availabilityPollGeneration.incrementAndGet()
@@ -2154,6 +2156,7 @@ class CarPlayController(
         iphoneHost.openIap2UsbSessionAsync(device, executor) { result ->
             when (result) {
                 is IphoneUsbHost.Iap2SessionResult.Connected -> {
+                    wiredChain(3, "iAP2 USB session opened (USBMUX fd ready)")
                     try {
                         val ncm = openNcm(device, result.session)
                         runStack(result.session, ncm)
@@ -2174,6 +2177,7 @@ class CarPlayController(
             )
         val function = NcmFunctionDiscovery.find(configuration)
             ?: throw IphoneUsbException.Protocol("iPhone configuration does not expose an NCM function")
+        wiredChain(4, "NCM config=${configuration.id} function found")
         debugLog(
             "ncm config=${configuration.id} control=${function.control.id}/${IphoneCarPlayConfiguration.alternateSetting(function.control)}" +
                 " data=${function.data.id}/${IphoneCarPlayConfiguration.alternateSetting(function.data)}" +
@@ -2189,7 +2193,7 @@ class CarPlayController(
         // the API 24/25 worker. Android 4.x (Dalvik) runs synchronous bulk reads, exactly
         // like the vendor stack: its UsbRequest JNI queues a global ref per queue() and
         // frees requests through REAPURB, which aborts the process on any lifecycle slip.
-        return NcmUsbBridge.open(
+        val bridge = NcmUsbBridge.open(
             sharedConnection = sharedConnection,
             function = function,
             expectedConfiguration = configuration.id,
@@ -2197,6 +2201,8 @@ class CarPlayController(
             useAsyncRead = realSdkInt() >= ASYNC_USB_READ_MIN_SDK,
             onDiagnostic = ::connectionDiagnostic,
         )
+        wiredChain(5, "NCM bridge opened (bulk endpoints claimed)")
+        return bridge
     }
 
     private fun runStack(usbSession: Iap2UsbSession, ncm: NcmUsbBridge) {
@@ -2206,11 +2212,13 @@ class CarPlayController(
             if (closed) return
             val mux = Iap2UsbMuxHost.open(usbSession, onDiagnostic = ::connectionDiagnostic)
             this.mux = mux
+            wiredChain(6, "USBMUX host opened")
             debugLog("wired USBMUX host opened")
             onStatus(CarPlayStatus.Pairing)
             val pairingClient = LockdownPairingClient(mux)
             val savedPairRecord = loadPairRecord()
             var pairRecord = savedPairRecord ?: pairNewRecord(pairingClient)
+            wiredChain(7, if (savedPairRecord != null) "Lockdown pairing ok (saved record)" else "Lockdown pairing ok (new record)")
             debugLog(
                 if (savedPairRecord != null) {
                     "wired using saved Lockdown pair record"
@@ -2263,6 +2271,7 @@ class CarPlayController(
                 pairRecord = pairNewRecord(pairingClient)
                 carKitClient.open(pairRecord, config.label)
             }
+            wiredChain(8, "CarKit service opened")
             debugLog("wired com.apple.carkit.service stream opened")
             // Lab transport diagnostics: packet headers only, never certificate or challenge data.
             fun wireSummary(bytes: ByteArray): String {
@@ -2316,6 +2325,7 @@ class CarPlayController(
                 onArtwork = ::onArtworkTransfer,
             )
             this.csm = csm
+            wiredChain(9, "iAP2 CSM channel opened")
             debugLog("wired iAP2 CSM channel opened")
 
             val ncmHostMac = ncm.hostMac ?: config.hostMac
@@ -2333,6 +2343,7 @@ class CarPlayController(
 
             val mfi = mfiSession?.client
                 ?: throw IphoneUsbException.DeviceUnavailable("MFi coprocessor client is unavailable")
+            wiredChain(12, "MFi coprocessor client ready")
             val endpoint = Iap2WiredCarPlayEndpoint(
                 ipv6Addresses = listOf(config.linkLocal),
                 airPlayPort = vpnService?.boundPort() ?: airPlayConfig.port,
@@ -2357,6 +2368,7 @@ class CarPlayController(
                 onProgress = { message ->
                     debugLog("wired $message")
                     if (message.contains("carplay-start-session")) {
+                        wiredChain(14, "iAP2 StartSession (0x4301) sent; waiting for iPhone mDNS/TCP")
                         vpnService?.sendUnsolicitedNeighborAdvertisement(force = true)
                         // Issue #95: arm the first-TCP watchdog 鈥?a new StartSession means any
                         // previous session no longer counts.
@@ -2835,6 +2847,7 @@ class CarPlayController(
             ncm.close()
             return "VPN service bind timed out or was unavailable"
         }
+        wiredChain(10, "VPN service bound")
         debugLog("wired VPN service bound; attaching NCM transport")
         val result = try {
             service.attach(
@@ -2855,12 +2868,14 @@ class CarPlayController(
         }
         return when (result) {
             is CarPlayVpnService.AttachResult.Started -> {
+                wiredChain(11, "VPN/NCM transport attached (TUN up)")
                 debugLog("wired VPN/NCM transport attach result=started")
                 null
             }
             CarPlayVpnService.AttachResult.Reused -> {
                 // TUN reused, NCM bridge swapped. The old NCM is closed by the
                 // service when the bridge was swapped; do not close the new one.
+                wiredChain(11, "VPN/NCM transport attached (TUN reused)")
                 debugLog("wired VPN/NCM transport attach result=reused (TUN kept, fwmark preserved)")
                 null
             }
@@ -2870,6 +2885,7 @@ class CarPlayController(
                 "VPN/NCM attachment was already started"
             }
             is CarPlayVpnService.AttachResult.Failed -> {
+                wiredChain(11, "VPN/NCM transport attach FAILED: ${result.message}")
                 debugLog("wired VPN/NCM transport attach result=failed ${result.message}")
                 service.lastAttachFailure?.let { debugLog("wired VPN/NCM root failure $it") }
                 ncm.close()
@@ -2973,6 +2989,14 @@ class CarPlayController(
                 causes.filterIsInstance<WirelessStartupException>().firstOrNull()?.reason),
                 if (wireless) wirelessGeneration.get() else null)
         }
+    }
+
+    /**
+     * T3 有线全链路打点：从 USB 到 AirPlay 会话共 16 步，统一前缀方便 grep。
+     * 哪一步没出现，下一步就不会来，直接定位断点。
+     */
+    private fun wiredChain(step: Int, message: String) {
+        debugLog("WIRED-CHAIN [$step/16] $message")
     }
 
     private fun debugLog(message: String) {
