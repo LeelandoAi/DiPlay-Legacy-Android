@@ -992,10 +992,25 @@ private class VideoDecoder(
     }
 
     private fun softwareDecoderName(mime: String): String? {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return null
-        return MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos.firstOrNull {
-            !it.isEncoder && it.isSoftwareOnly && mime in it.supportedTypes
-        }?.name
+        if (realSdkInt() >= Build.VERSION_CODES.Q) {
+            return MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos.firstOrNull {
+                !it.isEncoder && it.isSoftwareOnly && mime in it.supportedTypes
+            }?.name
+        }
+        // Pre-Q (including T3 real API 19): MediaCodecList(REGULAR_CODECS) is API 21+.
+        // Use the API 16 getCodecCount/getCodecInfoAt to find the software decoder
+        // (OMX.google.*). Without this, a hardware decoder rejection on T3 has no
+        // fallback and video fails entirely.
+        if (realSdkInt() >= 16) {
+            @Suppress("DEPRECATION")
+            return (0 until MediaCodecList.getCodecCount()).mapNotNull { i ->
+                @Suppress("DEPRECATION")
+                MediaCodecList.getCodecInfoAt(i)
+            }.firstOrNull {
+                !it.isEncoder && it.name.startsWith("OMX.google.") && mime in it.supportedTypes
+            }?.name
+        }
+        return null
     }
 
     private fun createDecoder(mime: String): MediaCodec {

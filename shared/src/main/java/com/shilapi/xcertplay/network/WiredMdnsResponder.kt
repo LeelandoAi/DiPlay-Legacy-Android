@@ -121,11 +121,16 @@ class WiredMdnsResponder(
         val parsed = parseQuestions(query) ?: return null
         var wantPtr = false
         var wantRaopPtr = false
+        var wantServicesEnum = false
         var wantAaaa = false
         val srvTxtInstances = LinkedHashSet<String>()
         for (question in parsed.questions) {
             val name = question.name.lowercase()
             when {
+                name == SERVICES_ENUM &&
+                    (question.type == QTYPE_PTR || question.type == QTYPE_ANY) -> {
+                    wantServicesEnum = true
+                }
                 name == AIRPLAY_SERVICE &&
                     (question.type == QTYPE_PTR || question.type == QTYPE_ANY) -> {
                     wantPtr = true
@@ -149,9 +154,13 @@ class WiredMdnsResponder(
                 }
             }
         }
-        if (!wantPtr && !wantRaopPtr && srvTxtInstances.isEmpty() && !wantAaaa) return null
+        if (!wantPtr && !wantRaopPtr && !wantServicesEnum && srvTxtInstances.isEmpty() && !wantAaaa) return null
 
         val answers = ArrayList<ByteArray>(4)
+        if (wantServicesEnum) {
+            answers += dnsRecord(encodeName(SERVICES_ENUM), QTYPE_PTR, encodeName(AIRPLAY_SERVICE))
+            answers += dnsRecord(encodeName(SERVICES_ENUM), QTYPE_PTR, encodeName(RAOP_SERVICE))
+        }
         if (wantPtr) {
             answers += dnsRecord(encodeName(AIRPLAY_SERVICE), QTYPE_PTR, encodeName(serviceInstance))
         }
@@ -379,6 +388,7 @@ class WiredMdnsResponder(
         private const val MAX_LABEL_BYTES = 63
         private const val AIRPLAY_SERVICE = "_airplay._tcp.local"
         private const val RAOP_SERVICE = "_raop._tcp.local"
+        private const val SERVICES_ENUM = "_services._dns-sd._udp.local"
 
         private fun sanitizeHostName(deviceName: String): String {
             val cleaned = deviceName.map { c ->

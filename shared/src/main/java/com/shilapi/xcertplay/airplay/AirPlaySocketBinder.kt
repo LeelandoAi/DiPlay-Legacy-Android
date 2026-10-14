@@ -55,9 +55,31 @@ internal object AirPlaySocketBinder {
             NetworkInterface.getByInetAddress(address)?.index?.takeIf { it > 0 }
         }.getOrNull()?.let { return it }
         // Some vendor ROMs don't resolve getByInetAddress for VPN/tun addresses; scan manually.
+        // CRITICAL: InetAddress.equals() includes scopeId, so a TUN interface holding
+        // fe80::1%9 will NOT equal the scopeless fe80::1 we're searching for. Compare
+        // only the address bytes, ignoring scopeId. Without this, scope resolution
+        // always fails on T3, the listener binds to a scopeless address, and the
+        // kernel never matches the scoped SYN from the iPhone (no SYN-ACK, #133).
         runCatching {
             Collections.list(NetworkInterface.getNetworkInterfaces())
-                .firstOrNull { ni -> Collections.list(ni.inetAddresses).any { it == address } }
+                .firstOrNull { ni ->
+                    Collections.list(ni.inetAddresses).any {
+                        it is Inet6Address && it.address.contentEquals(address.address)
+                    }
+                }
+                ?.index?.takeIf { it > 0 }
+        }.getOrNull()?.let { return it }
+        // Last resort: the wired VPN uses a tunX interface. If the address lookup
+        // failed entirely, use the first tun interface with a link-local address.
+        // The TUN is the only interface that can receive the iPhone's SYN.
+        runCatching {
+            Collections.list(NetworkInterface.getNetworkInterfaces())
+                .firstOrNull { ni ->
+                    ni.name.startsWith("tun") &&
+                        Collections.list(ni.inetAddresses).any {
+                            it is Inet6Address && it.isLinkLocalAddress
+                        }
+                }
                 ?.index?.takeIf { it > 0 }
         }.getOrNull()?.let { return it }
         return 0
