@@ -778,6 +778,9 @@ private class VideoDecoder(
     private var lastConfig: VideoJob.Config? = null
     private var renderedFrameLogged = false
     private var submittedFrameLogged = false
+    // API 17 (Android 4.2) decoders often ignore csd-0/csd-1; the first frame
+    // must carry SPS/PPS in-band or it fails to decode. Set on configure.
+    private var inBandSpsPps: ByteArray? = null
     private var duplicateConfigLogged = false
     private var failureReports = 0
     private val referenceChain = VideoReferenceChain()
@@ -923,6 +926,14 @@ private class VideoDecoder(
                 pps.takeIf { it.isNotEmpty() }?.let { START_CODE + it },
             )
         }
+        // Issue: API 17 H.264 first frame fails. Old decoders ignore csd-0/csd-1,
+        // so prepend SPS/PPS in-band to the first frame (Annex B format).
+        inBandSpsPps = if (codec != VideoCodec.H265 && realSdkInt() == 17) {
+            val (sps, pps) = MediaCodecSupport.avcParameterSets(codecData)
+            if (sps.isNotEmpty() && pps.isNotEmpty()) {
+                START_CODE + sps + START_CODE + pps
+            } else null
+        } else null
         // Some vendor decoders (e.g. MediaTek c2.mtk.avc.decoder) reject the tuned
         // parameters with BAD_VALUE. Fall back to a minimal format, then to software.
         val attempts = listOf(
@@ -1114,6 +1125,14 @@ private class VideoDecoder(
                 "video decoder first input avcc=${nalus.size} annexB=${annexB.size}",
             )
         }
+        // API 17: prepend SPS/PPS in-band to the first frame; old decoders
+        // ignore csd-0/csd-1 and fail to decode without it.
+        val spsPps = inBandSpsPps
+        val frameData = if (spsPps != null) {
+            inBandSpsPps = null
+            Log.i(TAG, "video decoder prepending SPS/PPS in-band to first frame (${spsPps.size} bytes)")
+            spsPps + annexB
+        } else annexB
         val index = VideoInputPump.acquire(
             running = { running }, drain = { drainOutput(codec) },
             dequeue = { codec.dequeueInputBuffer(INPUT_TIMEOUT_US) },
@@ -1123,11 +1142,11 @@ private class VideoDecoder(
         val input = if (realSdkInt() >= Build.VERSION_CODES.LOLLIPOP) codec.getInputBuffer(index) else codec.inputBuffers[index]
         checkNotNull(input) { "Decoder input buffer unavailable" }
         input.clear()
-        if (annexB.size <= input.remaining()) {
-            input.put(annexB)
+        if (frameData.size <= input.remaining()) {
+            input.put(frameData)
             // A paced frame carries its local time; MediaCodec returns it with the decoded output.
             val presentationUs = if (presentNs > 0) presentNs / 1000 else System.nanoTime() / 1000
-            codec.queueInputBuffer(index, 0, annexB.size, presentationUs, 0)
+            codec.queueInputBuffer(index, 0, frameData.size, presentationUs, 0)
             val queuedNow = System.nanoTime()
             if (lastQueuedNanos != 0L && queuedNow - lastQueuedNanos > STILL_GAP_NS) resumedAtNanos = queuedNow
             lastQueuedNanos = queuedNow
