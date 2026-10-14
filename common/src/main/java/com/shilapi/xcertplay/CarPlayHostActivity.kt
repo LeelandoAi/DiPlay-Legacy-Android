@@ -816,7 +816,7 @@ class CarPlayHostActivity : ComponentActivity() {
                     add(Manifest.permission.ACCESS_FINE_LOCATION)
                 }
             }
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && needsWifiRuntimePermission -> listOf(
+            realSdkInt() >= Build.VERSION_CODES.M && needsWifiRuntimePermission -> listOf(
                 Manifest.permission.ACCESS_COARSE_LOCATION,
                 Manifest.permission.ACCESS_FINE_LOCATION,
             )
@@ -907,7 +907,7 @@ class CarPlayHostActivity : ComponentActivity() {
         advancedAudioChannelMapping =
             advancedAudioChannelMappingSupported &&
                 AirPlayPersistence.loadAdvancedAudioChannelMapping(this)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP &&
+        if (realSdkInt() >= Build.VERSION_CODES.LOLLIPOP &&
             DiLink51ClusterLayout.automatic(this) && clusterMonitor == null) {
             clusterMonitor = DiLink51ClusterMonitor(this, ::onClusterActivityState).also { it.start() }
         } else if (!DiLink51ClusterLayout.automatic(this)) {
@@ -1379,7 +1379,7 @@ class CarPlayHostActivity : ComponentActivity() {
         mainHandler.removeCallbacks(refreshTurnOverlay)
         AirPlayPersistence.overlaySettingsListener = null
         com.shilapi.xcertplay.hud.BydNavigationOutputs.setTurnOverlayListener(null)
-        if (Build.VERSION.SDK_INT >= 21) clusterMonitor?.stop()
+        if (realSdkInt() >= 21) clusterMonitor?.stop()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1) {
             val displayManager = if (realSdkInt() >= Build.VERSION_CODES.M) {
                 getSystemService(android.hardware.display.DisplayManager::class.java)
@@ -2506,12 +2506,12 @@ class CarPlayHostActivity : ComponentActivity() {
             val switch = Switch(this@CarPlayHostActivity).apply {
                 isChecked = locationReportingEnabled
                 contentDescription = getString(R.string.report_android_location_to_the_iphone)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                if (realSdkInt() >= Build.VERSION_CODES.LOLLIPOP) {
                     showText = false
                     textOn = ""
                     textOff = ""
                 }
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                if (realSdkInt() >= Build.VERSION_CODES.M) {
                     thumbTintList = ColorStateList(
                         arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()),
                         intArrayOf(MENU_ACCENT, MENU_SECONDARY),
@@ -2616,7 +2616,7 @@ class CarPlayHostActivity : ComponentActivity() {
         val seekBar = SeekBar(this).apply {
             max = (values.size - 1).coerceAtLeast(0)
             progress = selectedIndex
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            if (realSdkInt() >= Build.VERSION_CODES.LOLLIPOP) {
                 splitTrack = false
                 progressTintList = ColorStateList.valueOf(MENU_ACCENT)
                 thumbTintList = ColorStateList.valueOf(MENU_ACCENT)
@@ -3132,7 +3132,7 @@ class CarPlayHostActivity : ComponentActivity() {
             setPadding(0, dp(8), 0, 0)
         }
         val modes = buildList {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            if (realSdkInt() >= Build.VERSION_CODES.N) {
                 add(
                     WirelessHotspotMode.WIFI_P2P to
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -3531,7 +3531,7 @@ class CarPlayHostActivity : ComponentActivity() {
         } else decoderCanvasSupport(display)
 
     private fun decoderCanvasSupport(display: AirPlayDisplayConfig): CanvasSupport = try {
-        if (Build.VERSION.SDK_INT < 21) {
+        if (realSdkInt() < 21) {
             CanvasSupport(false, "legacy_decoder_capabilities", "Keep the native screen canvas on Android 4.4")
         } else {
         val mime = if (hevcEnabled) MediaFormat.MIMETYPE_VIDEO_HEVC else MediaFormat.MIMETYPE_VIDEO_AVC
@@ -3543,7 +3543,7 @@ class CarPlayHostActivity : ComponentActivity() {
         if (decoder == null) {
             CanvasSupport(false, "no_decoder", "Decoder capability mime=$mime result=no_decoder")
         } else {
-            val hardware = if (Build.VERSION.SDK_INT >= 29) decoder.isHardwareAccelerated
+            val hardware = if (realSdkInt() >= 29) decoder.isHardwareAccelerated
                 else !decoder.name.startsWith("OMX.google.") && !decoder.name.startsWith("c2.android.")
             val video = decoder.getCapabilitiesForType(mime).videoCapabilities
             val sizeSupported = video?.isSizeSupported(display.widthPixels, display.heightPixels) == true
@@ -4329,7 +4329,7 @@ class CarPlayHostActivity : ComponentActivity() {
     }
 
     private fun isMultiWindowActive(): Boolean {
-        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && isInMultiWindowMode
+        return realSdkInt() >= Build.VERSION_CODES.N && isInMultiWindowMode
     }
 
 
@@ -4802,7 +4802,7 @@ class CarPlayHostActivity : ComponentActivity() {
     private fun exitApplication() {
         if (shuttingDown.get()) return
         restoreSettingsBaseline()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) finishAndRemoveTask() else finish()
+        if (realSdkInt() >= Build.VERSION_CODES.LOLLIPOP) finishAndRemoveTask() else finish()
         shutdown(terminateProcess = true, reason = "settings exit application")
     }
 

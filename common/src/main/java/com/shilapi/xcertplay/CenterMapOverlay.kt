@@ -7,6 +7,7 @@ import android.graphics.Outline
 import android.graphics.PixelFormat
 import android.graphics.SurfaceTexture
 import android.os.Build
+import com.shilapi.xcertplay.compat.realSdkInt
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
@@ -44,7 +45,7 @@ internal object CenterMapOverlay {
     var requestShow: (() -> Unit)? = null
     private val showIfBackground = Runnable { if (!diPlayInFront()) requestShow?.invoke() }
 
-    fun permitted(context: Context): Boolean = Build.VERSION.SDK_INT < 23 || Settings.canDrawOverlays(context)
+    fun permitted(context: Context): Boolean = realSdkInt() < 23 || Settings.canDrawOverlays(context)
 
     /** Shows the card shortly, unless a DiPlay screen is in front by then. */
     fun scheduleShow() {
@@ -73,7 +74,7 @@ internal object CenterMapOverlay {
         if (root != null) return true
         if (!aspect.isFinite() || aspect <= 0) return false
         if (!permitted(context)) return false
-        val windows = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+        val windows = if (realSdkInt() >= Build.VERSION_CODES.M) {
             context.getSystemService(WindowManager::class.java)
         } else {
             @Suppress("DEPRECATION")
@@ -138,11 +139,11 @@ internal object CenterMapOverlay {
         }
         val card = FrameLayout(context).apply {
             setBackgroundColor(Color.BLACK)
-            if (Build.VERSION.SDK_INT >= 21) outlineProvider = object : ViewOutlineProvider() {
+            if (realSdkInt() >= 21) outlineProvider = object : ViewOutlineProvider() {
                 override fun getOutline(view: View, outline: Outline) =
                     outline.setRoundRect(0, 0, view.width, view.height, radius)
             }
-            if (Build.VERSION.SDK_INT >= 21) clipToOutline = true
+            if (realSdkInt() >= 21) clipToOutline = true
             addView(video, FrameLayout.LayoutParams(-1, -1))
         }
         val slop = ViewConfiguration.get(context).scaledTouchSlop
@@ -259,7 +260,7 @@ internal object CenterMapOverlay {
     fun hide() {
         val view = root ?: return
         root = null
-        val windowManager = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+        val windowManager = if (realSdkInt() >= Build.VERSION_CODES.M) {
             view.context.getSystemService(WindowManager::class.java)
         } else {
             @Suppress("DEPRECATION")

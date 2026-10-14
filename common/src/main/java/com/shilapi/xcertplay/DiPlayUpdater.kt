@@ -7,6 +7,7 @@ import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import android.widget.Toast
+import com.shilapi.xcertplay.compat.realSdkInt
 import com.shilapi.xcertplay.host.R
 import java.io.File
 import java.io.IOException
@@ -191,7 +192,7 @@ internal class DiPlayUpdater(private val activity: DiPlayActivity) {
             showNotice(R.string.update_disconnect_first)
             return
         }
-        if (Build.VERSION.SDK_INT >= 26 && !activity.packageManager.canRequestPackageInstalls()) {
+        if (realSdkInt() >= 26 && !activity.packageManager.canRequestPackageInstalls()) {
             awaitingInstallPermission = file
             DiPlayUpdateDialogs.confirm(
                 activity,

@@ -73,7 +73,7 @@ internal class DiLink51ClusterMonitor(context: Context, private val onState: (Cl
                 seen.entries.removeAll { it.value < since }
             }
             state.snapshot()
-        } catch (_: RuntimeException) {
+        } catch (_: Throwable) {  // Catch LinkageError too: UsageStatsManager missing on fake-SDK ROMs
             state = ClusterActivityState()
             seen.clear()
             since = bootTime()

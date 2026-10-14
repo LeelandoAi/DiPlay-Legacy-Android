@@ -25,6 +25,7 @@ import android.media.AudioFormat
 import android.media.AudioTrack
 import android.net.Uri
 import android.os.Build
+import com.shilapi.xcertplay.compat.realSdkInt
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -292,7 +293,7 @@ class DiPlayActivity : ComponentActivity() {
         com.shilapi.xcertplay.hud.BydNavigationOutputs.onAppOpened(applicationContext)
         WheelKeyService.restoreIfNeeded(this)
         WindowCompat.setDecorFitsSystemWindows(window, true)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+        if (realSdkInt() >= Build.VERSION_CODES.LOLLIPOP) {
             window.statusBarColor = BG
             window.navigationBarColor = BG
         }
@@ -654,13 +655,13 @@ class DiPlayActivity : ComponentActivity() {
         val body = column()
         val left = column()
         left.addView(label(getString(R.string.your_phone_your_drive), 12, ACCENT, true).apply {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) letterSpacing = .16f
+            if (realSdkInt() >= Build.VERSION_CODES.LOLLIPOP) letterSpacing = .16f
         })
         left.addView(label(getString(R.string.a_familiar_drive), if (wide) 42 else 36, TEXT, true).apply { setPadding(0, dp(12), 0, dp(10)) })
         left.addView(label(getString(R.string.your_maps_music_and_conversations_carplay_right_here_on_yo), 19, MUTED))
         val card = card()
         card.addView(label(getString(R.string.wireless_carplay), 12, ACCENT, true).apply {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) letterSpacing = .12f
+            if (realSdkInt() >= Build.VERSION_CODES.LOLLIPOP) letterSpacing = .12f
         })
         status = label(getString(R.string.ready_when_you_are), 24, TEXT, true).apply { setPadding(0, dp(10), 0, dp(16)) }
         card.addView(status)
@@ -709,7 +710,7 @@ class DiPlayActivity : ComponentActivity() {
         right.addView(button(getString(R.string.settings), false) { page = "settings"; render() }, matchButton())
         right.addView(label(getString(R.string.make_diplay_feel_right_for_your_car), 14, MUTED).apply { gravity = Gravity.CENTER; setPadding(0, dp(10), 0, dp(24)) })
         right.addView(label("${getString(R.string.home_public_preview)}${version()}", 12, MUTED).apply {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) letterSpacing = .08f
+            if (realSdkInt() >= Build.VERSION_CODES.LOLLIPOP) letterSpacing = .08f
         })
         if (wide) {
             // Both rows share column widths. The USB button starts at the wireless
@@ -773,7 +774,7 @@ class DiPlayActivity : ComponentActivity() {
             isClickable = true
             isFocusable = true
             isSelected = selected
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) foreground = focusRing(12)
+            if (realSdkInt() >= Build.VERSION_CODES.M) foreground = focusRing(12)
             contentDescription = getString(R.string.settings_open_category, title)
             background = compatibleRipple(
                 ColorStateList.valueOf(RIPPLE),
@@ -973,7 +974,7 @@ class DiPlayActivity : ComponentActivity() {
         isClickable = true
         isFocusable = true
         contentDescription = getString(R.string.settings_open_category, settingsCategoryTitle(category))
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+        if (realSdkInt() >= Build.VERSION_CODES.M) {
             foreground = android.graphics.drawable.LayerDrawable(arrayOf<android.graphics.drawable.Drawable>(
                 android.graphics.drawable.RippleDrawable(ColorStateList.valueOf(RIPPLE), null, null), focusRing(12)))
         }
@@ -1024,7 +1025,7 @@ class DiPlayActivity : ComponentActivity() {
         setPadding(dp(16), dp(10), dp(16), dp(10))
         isClickable = true
         isFocusable = true
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+        if (realSdkInt() >= Build.VERSION_CODES.M) {
             foreground = android.graphics.drawable.LayerDrawable(arrayOf<android.graphics.drawable.Drawable>(
                 android.graphics.drawable.RippleDrawable(ColorStateList.valueOf(RIPPLE), null, null), focusRing(12)))
         }
@@ -2317,7 +2318,7 @@ class DiPlayActivity : ComponentActivity() {
             setPadding(0, dp(16), 0, dp(16))
         })
         body.addView(button(getString(R.string.copy_command), false) {
-            val clipboard = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val clipboard = if (realSdkInt() >= Build.VERSION_CODES.M) {
                 getSystemService(android.content.ClipboardManager::class.java)
             } else {
                 @Suppress("DEPRECATION")
@@ -2460,7 +2461,7 @@ class DiPlayActivity : ComponentActivity() {
             setBackgroundColor(0x22FFFFFF)
         })
         body.addView(button(getString(R.string.copy_command), false) {
-            val clipboard = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val clipboard = if (realSdkInt() >= Build.VERSION_CODES.M) {
                 getSystemService(android.content.ClipboardManager::class.java)
             } else {
                 @Suppress("DEPRECATION")
@@ -3756,7 +3757,7 @@ class DiPlayActivity : ComponentActivity() {
             setImageBitmap(custom ?: BitmapFactory.decodeResource(resources, R.raw.ic_car_home))
             scaleType = ImageView.ScaleType.CENTER_CROP
             background = rounded(SURFACE, BORDER)
-            if (Build.VERSION.SDK_INT >= 21) clipToOutline = true
+            if (realSdkInt() >= 21) clipToOutline = true
             importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
         }, LinearLayout.LayoutParams(dp(72), dp(72)).apply { marginEnd = dp(16) })
         val text = column()
@@ -4176,7 +4177,7 @@ class DiPlayActivity : ComponentActivity() {
     }
 
     private fun closeP2pChannel(channel: android.net.wifi.p2p.WifiP2pManager.Channel) {
-        if (Build.VERSION.SDK_INT >= 27) channel.close()
+        if (realSdkInt() >= 27) channel.close()
     }
 
     private fun refreshStatus() {
