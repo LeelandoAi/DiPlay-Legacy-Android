@@ -154,15 +154,19 @@ class Ipv6NcmBridge(
                 // answers it usefully, and a duplicate multicast reply would only
                 // confuse the iPhone's resolver.
                 val responder = mdnsResponder
-                val mdnsAnswer = responder?.answerFrame(
+                val mdnsAnswers = responder?.answerFrames(
                     frame, ipv6.payloadOffset, ipv6.payloadLength, hostMac, ipv6.sourceMac,
-                )
-                if (mdnsAnswer != null) {
-                    ncm.send(mdnsAnswer, WRITE_TIMEOUT_MILLIS)
+                ) ?: emptyList()
+                if (mdnsAnswers.isNotEmpty()) {
+                    // Issue #163: a non-QU query also gets a multicast copy, so the
+                    // iPhone sees the answer even if it ignores unicast replies.
+                    for (mdnsAnswer in mdnsAnswers) {
+                        ncm.send(mdnsAnswer, WRITE_TIMEOUT_MILLIS)
+                    }
                     if (mdnsAnswerLogBudget > 0) {
                         mdnsAnswerLogBudget--
-                        val answerMsg = "ncm answered wired mdns _airplay query with unicast response " +
-                            "bytes=${mdnsAnswer.size}"
+                        val answerMsg = "ncm answered wired mdns _airplay query frames=${mdnsAnswers.size} " +
+                            "bytes=${mdnsAnswers.sumOf { it.size }}"
                         Log.i(TAG, answerMsg)
                         runCatching { onDebugLog(answerMsg) }
                     }

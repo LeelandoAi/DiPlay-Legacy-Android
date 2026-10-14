@@ -100,6 +100,7 @@ import com.shilapi.xcertplay.settings.SettingsTheme
 import com.shilapi.xcertplay.settings.SettingsWidgets
 import com.shilapi.xcertplay.transport.Iap2IdentificationConfig
 import com.shilapi.xcertplay.transport.Iap2LocationProvider
+import com.shilapi.xcertplay.util.safeStackTrace
 import com.shilapi.xcertplay.transport.IphoneUsbMatcher
 import com.shilapi.xcertplay.transport.UsbDeviceId
 import com.shilapi.xcertplay.transport.VehicleSpeedLocationProvider
@@ -5157,7 +5158,11 @@ class CarPlayHostActivity : ComponentActivity() {
         override fun uncaughtException(thread: Thread, error: Throwable) {
             if (reported.compareAndSet(false, true)) {
                 runCatching {
-                    val trace = error.stackTraceToString().lineSequence().take(40).joinToString("\n")
+                    // safeStackTrace never recurses into the cause chain: a cyclic
+                    // cause used to StackOverflow the crash reporter itself (#163)
+                    // and hide the original error.
+                    val trace = error.safeStackTrace(maxCauses = 4, maxFramesPerCause = 40)
+                        .lineSequence().take(40).joinToString("\n")
                     crashDiagnosticLog?.append(
                         "FATAL thread=${thread.name} " +
                             "${error.javaClass.name}: ${error.message}\n$trace",

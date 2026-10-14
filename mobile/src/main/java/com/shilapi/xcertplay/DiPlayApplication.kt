@@ -5,9 +5,8 @@ import android.os.Build
 import com.shilapi.xcertplay.compat.realSdkInt
 import android.util.Log
 import androidx.multidex.MultiDexApplication
+import com.shilapi.xcertplay.util.safeStackTrace
 import java.io.File
-import java.io.PrintWriter
-import java.io.StringWriter
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -36,9 +35,10 @@ class DiPlayApplication : MultiDexApplication() {
 
         fun recordCrash(context: Context, thread: Thread, throwable: Throwable) {
             val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US).format(Date())
-            val stringWriter = StringWriter()
-            throwable.printStackTrace(PrintWriter(stringWriter))
-            val stackTrace = stringWriter.toString()
+            // safeStackTrace never recurses into the cause chain: a cyclic cause
+            // used to StackOverflow the crash reporter itself (#163) and hide
+            // the original error.
+            val stackTrace = throwable.safeStackTrace()
 
             val logEntry = buildString {
                 append("\n================ FATAL EXCEPTION ================\n")
