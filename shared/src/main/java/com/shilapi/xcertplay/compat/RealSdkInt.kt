@@ -1,4 +1,4 @@
-package com.shilapi.xcertplay.compat
+﻿package com.shilapi.xcertplay.compat
 
 import android.os.Build
 
@@ -12,7 +12,7 @@ import android.os.Build
  * that don't exist on the real 4.4 framework, or attempting per-app VPN that the old
  * netd rejects).
  */
-internal fun realSdkInt(): Int {
+fun realSdkInt(): Int {
     val reported = Build.VERSION.SDK_INT
     val release = Build.VERSION.RELEASE ?: return reported
     // Map 4.4.x release to API 19 regardless of what SDK_INT claims.
@@ -32,3 +32,4 @@ internal fun realSdkInt(): Int {
     }
     return reported
 }
+

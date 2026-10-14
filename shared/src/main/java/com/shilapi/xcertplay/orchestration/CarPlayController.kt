@@ -1349,6 +1349,7 @@ class CarPlayController(
                     is CarPlayVpnService.AttachResult.Started -> Unit
                     CarPlayVpnService.AttachResult.AlreadyStarted ->
                         throw IOException("Wireless AirPlay transport is already attached")
+                    CarPlayVpnService.AttachResult.Reused -> Unit
                     is CarPlayVpnService.AttachResult.Failed ->
                         throw IOException(result.message)
                 }
@@ -2360,8 +2361,6 @@ class CarPlayController(
                     // reconnect path rebuilds the link instead.
                     Iap2WiredControlTerminal.PEER_SILENT ->
                         CarPlayStatus.Failed("Wired CarPlay peer silent; resetting link")
-                    Iap2WiredControlTerminal.Reused ->
-                        CarPlayStatus.Connected
                     // Issue #95: iPhone alive on iAP2 but never opened the AirPlay TCP
                     // connection 鈥?fail fast instead of idling until USB wedges.
                     // Issue #155/#123: capture the kernel TCP-table snapshot here so the
@@ -3111,5 +3110,9 @@ class CarPlayController(
         private val BLUETOOTH_ADDRESS = Regex("^[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}$")
     }
 }
+
+
+
+
 
 
