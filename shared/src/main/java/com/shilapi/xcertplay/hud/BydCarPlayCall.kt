@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.util.Base64
 import android.util.Log
+import com.shilapi.xcertplay.compat.realSdkInt
 import com.shilapi.xcertplay.iap2.body.Iap2BodyReader
 import com.shilapi.xcertplay.iap2.wire.Iap2Frame
 import java.lang.reflect.InvocationTargetException
@@ -472,13 +473,13 @@ object BydCarPlayCallTool {
     }
 
     private fun alive(processId: String): Boolean = runCatching {
-        if (android.os.Build.VERSION.SDK_INT < 21) return@runCatching java.io.File("/proc/$processId").exists()
+        if (realSdkInt() < 21) return@runCatching java.io.File("/proc/$processId").exists()
         android.system.Os.kill(processId.toInt(), 0)
         true
     }.getOrDefault(false)
 
     private fun appMayBeAlive(processId: String): Boolean {
-        if (android.os.Build.VERSION.SDK_INT < 21) return java.io.File("/proc/$processId").exists()
+        if (realSdkInt() < 21) return java.io.File("/proc/$processId").exists()
         return try {
         android.system.Os.kill(processId.toInt(), 0)
         true

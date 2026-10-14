@@ -1,6 +1,7 @@
 package com.shilapi.xcertplay
 
 import android.content.Context
+import com.shilapi.xcertplay.compat.realSdkInt
 import android.content.pm.ApplicationInfo
 import android.provider.Settings
 import android.util.Log
@@ -21,8 +22,8 @@ internal object CarHotspotSetup {
         HOTSPOT("WRITE_SETTINGS"), BOOT_LAUNCH("SYSTEM_ALERT_WINDOW");
 
         fun granted(context: Context): Boolean = when (this) {
-            HOTSPOT -> android.os.Build.VERSION.SDK_INT < 23 || Settings.System.canWrite(context)
-            BOOT_LAUNCH -> android.os.Build.VERSION.SDK_INT < 23 || Settings.canDrawOverlays(context)
+            HOTSPOT -> realSdkInt() < 23 || Settings.System.canWrite(context)
+            BOOT_LAUNCH -> realSdkInt() < 23 || Settings.canDrawOverlays(context)
         }
     }
 

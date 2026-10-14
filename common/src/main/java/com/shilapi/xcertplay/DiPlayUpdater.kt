@@ -252,7 +252,7 @@ internal class DiPlayUpdater(private val activity: DiPlayActivity) {
             showRelease(release)
         }
         val file = awaitingInstallPermission ?: return
-        if (Build.VERSION.SDK_INT >= 26 && activity.packageManager.canRequestPackageInstalls()) {
+        if (realSdkInt() >= 26 && activity.packageManager.canRequestPackageInstalls()) {
             awaitingInstallPermission = null
             DiPlayUpdateDialogs.installReady(
                 activity, "", activity.getString(R.string.update_install_notice),

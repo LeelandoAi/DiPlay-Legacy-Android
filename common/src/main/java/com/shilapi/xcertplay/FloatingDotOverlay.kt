@@ -7,6 +7,7 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.PixelFormat
 import android.os.Build
+import com.shilapi.xcertplay.compat.realSdkInt
 import android.provider.Settings
 import android.util.Log
 import android.view.Gravity
@@ -28,7 +29,7 @@ object FloatingDotOverlay {
     private var windowManager: WindowManager? = null
 
     fun permitted(context: Context): Boolean {
-        return if (Build.VERSION.SDK_INT >= 23) {
+        return if (realSdkInt() >= 23) {
             Settings.canDrawOverlays(context)
         } else {
             true
@@ -64,7 +65,7 @@ object FloatingDotOverlay {
         val size = (48 * density).toInt()
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
-        val type = if (Build.VERSION.SDK_INT >= 26) {
+        val type = if (realSdkInt() >= 26) {
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
         } else {
             @Suppress("DEPRECATION")

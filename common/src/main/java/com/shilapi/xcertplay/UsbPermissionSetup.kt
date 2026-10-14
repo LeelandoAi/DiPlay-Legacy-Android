@@ -1,6 +1,7 @@
 package com.shilapi.xcertplay
 
 import android.content.Context
+import com.shilapi.xcertplay.compat.realSdkInt
 import android.provider.Settings
 import com.shilapi.xcertplay.adb.AdbKeys
 import com.shilapi.xcertplay.adb.LocalAdb
@@ -19,7 +20,7 @@ internal object UsbPermissionSetup {
                 ACCESSIBILITY -> UsbAutoConfirmService.isEnabled(context) &&
                     Settings.Secure.getInt(context.contentResolver, Settings.Secure.ACCESSIBILITY_ENABLED, 0) == 1
                 USAGE -> HomeScreenMonitor.hasAccess(context)
-                OVERLAY -> android.os.Build.VERSION.SDK_INT < 23 || Settings.canDrawOverlays(context)
+                OVERLAY -> realSdkInt() < 23 || Settings.canDrawOverlays(context)
             }
         }.getOrDefault(false)
     }

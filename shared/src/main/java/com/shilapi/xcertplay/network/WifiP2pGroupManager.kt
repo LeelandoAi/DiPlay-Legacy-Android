@@ -12,6 +12,7 @@ import android.net.wifi.p2p.WifiP2pGroup
 import android.net.wifi.p2p.WifiP2pInfo
 import android.net.wifi.p2p.WifiP2pManager
 import android.os.Build
+import com.shilapi.xcertplay.compat.realSdkInt
 import androidx.core.content.ContextCompat
 import android.os.HandlerThread
 import android.os.Looper
@@ -48,7 +49,7 @@ class WifiP2pGroupManager(
         require(WifiP2pChannels.isValid(preferredChannel)) { "Unsupported Wi-Fi Direct channel: $preferredChannel" }
     }
     private val appContext = context.applicationContext
-    private val p2pManager = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+    private val p2pManager = if (realSdkInt() >= Build.VERSION_CODES.M) {
         appContext.getSystemService(WifiP2pManager::class.java)
     } else {
         @Suppress("DEPRECATION")
@@ -718,7 +719,7 @@ class WifiP2pGroupManager(
 
     @Suppress("DEPRECATION")
     private fun readStation(): Station = runCatching {
-        val wifi = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+        val wifi = if (realSdkInt() >= Build.VERSION_CODES.M) {
             appContext.getSystemService(WifiManager::class.java)
         } else {
             appContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
@@ -728,7 +729,7 @@ class WifiP2pGroupManager(
     }.getOrDefault(Station(null, null))
 
     private fun checkPrerequisites(station: Station) {
-        val wifi = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+        val wifi = if (realSdkInt() >= Build.VERSION_CODES.M) {
             appContext.getSystemService(WifiManager::class.java)
         } else {
             @Suppress("DEPRECATION")

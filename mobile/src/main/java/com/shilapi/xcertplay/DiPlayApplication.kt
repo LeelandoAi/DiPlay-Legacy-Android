@@ -2,6 +2,7 @@ package com.shilapi.xcertplay
 
 import android.content.Context
 import android.os.Build
+import com.shilapi.xcertplay.compat.realSdkInt
 import android.util.Log
 import androidx.multidex.MultiDexApplication
 import java.io.File
@@ -70,7 +71,7 @@ class DiPlayApplication : MultiDexApplication() {
 
             // 3. On legacy Android (API <= 28), also attempt to write to public SD card root /mnt/sdcard/
             // for head units without root access (e.g. Chery eQ1, Allwinner T3)
-            if (Build.VERSION.SDK_INT <= 28) {
+            if (realSdkInt() <= 28) {
                 runCatching {
                     @Suppress("DEPRECATION")
                     val sdcardDir = android.os.Environment.getExternalStorageDirectory()

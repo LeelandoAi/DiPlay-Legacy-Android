@@ -14,6 +14,7 @@ import android.view.WindowManager
 import android.graphics.Point
 import android.hardware.display.DisplayManager
 import android.os.Build
+import com.shilapi.xcertplay.compat.realSdkInt
 import android.os.Bundle
 import android.util.Log
 import android.view.Display
@@ -217,7 +218,7 @@ internal class ClusterMapPresentation(
 
         private fun displayManager(context: Context): DisplayManager? =
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1) {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                if (realSdkInt() >= Build.VERSION_CODES.M) {
                     context.getSystemService(DisplayManager::class.java)
                 } else {
                     @Suppress("DEPRECATION")

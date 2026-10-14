@@ -1,6 +1,7 @@
 package com.shilapi.xcertplay.settings
 
 import android.content.Context
+import com.shilapi.xcertplay.compat.realSdkInt
 import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.Typeface
@@ -75,13 +76,13 @@ object SettingsWidgets {
             isChecked = checked
             this.contentDescription = contentDescription
             isEnabled = enabled
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
+            if (realSdkInt() >= android.os.Build.VERSION_CODES.LOLLIPOP) {
                 showText = false
                 textOn = ""
                 textOff = ""
             }
             if (theme.isOverlay) {
-                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+                if (realSdkInt() >= android.os.Build.VERSION_CODES.M) {
                     thumbTintList = ColorStateList(
                         arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()),
                         intArrayOf(theme.accent, theme.textSecondary),
@@ -93,7 +94,7 @@ object SettingsWidgets {
                 }
             } else {
                 minHeight = theme.dp(context, 56)
-                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
+                if (realSdkInt() >= android.os.Build.VERSION_CODES.LOLLIPOP) {
                     buttonTintList = ColorStateList.valueOf(theme.accent)
                 }
             }
@@ -136,7 +137,7 @@ object SettingsWidgets {
             row.isFocusable = true
             row.background = com.shilapi.xcertplay.compatibleRipple(
                 ColorStateList.valueOf(ROW_RIPPLE), null, android.graphics.drawable.ColorDrawable(Color.WHITE))
-            if (android.os.Build.VERSION.SDK_INT >= 23) row.foreground = android.graphics.drawable.StateListDrawable().apply {
+            if (realSdkInt() >= 23) row.foreground = android.graphics.drawable.StateListDrawable().apply {
                 addState(intArrayOf(android.R.attr.state_focused), android.graphics.drawable.GradientDrawable().apply {
                     setColor(Color.TRANSPARENT)
                     cornerRadius = theme.dp(context, 12).toFloat()
@@ -296,7 +297,7 @@ object SettingsWidgets {
         val seekBar = SeekBar(context).apply {
             max = CarPlayDisplayScale.MAX_PERCENT - CarPlayDisplayScale.MIN_PERCENT
             progress = initial - CarPlayDisplayScale.MIN_PERCENT
-            if (android.os.Build.VERSION.SDK_INT >= 21) {
+            if (realSdkInt() >= 21) {
                 splitTrack = false
                 progressTintList = ColorStateList.valueOf(theme.accent)
                 thumbTintList = ColorStateList.valueOf(theme.accent)

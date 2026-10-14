@@ -166,7 +166,7 @@ class CarPlayVideoActivity : Activity() {
         position = timeText()
         length = timeText()
         timeBar = SeekBar(this).apply {
-            if (Build.VERSION.SDK_INT >= 21) {
+            if (realSdkInt() >= 21) {
                 progressTintList = ColorStateList.valueOf(Color.WHITE)
                 thumbTintList = ColorStateList.valueOf(Color.WHITE)
                 secondaryProgressTintList = ColorStateList.valueOf(0x80FFFFFF.toInt())

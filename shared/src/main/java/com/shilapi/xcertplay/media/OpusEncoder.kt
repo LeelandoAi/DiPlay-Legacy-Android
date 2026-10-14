@@ -3,6 +3,7 @@ package com.shilapi.xcertplay.media
 import android.media.MediaCodec
 import android.media.MediaFormat
 import android.os.Build
+import com.shilapi.xcertplay.compat.realSdkInt
 import android.util.Log
 import java.io.Closeable
 
@@ -56,7 +57,7 @@ internal class OpusEncoder(bitrate: Int) : Closeable {
         }
         if (inputIndex >= 0) {
             @Suppress("DEPRECATION")
-            val input = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            val input = if (realSdkInt() >= Build.VERSION_CODES.LOLLIPOP) {
                 codec.getInputBuffer(inputIndex)
             } else {
                 codec.inputBuffers[inputIndex]
@@ -98,7 +99,7 @@ internal class OpusEncoder(bitrate: Int) : Closeable {
                         continue
                     }
                     @Suppress("DEPRECATION")
-                    val buffer = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                    val buffer = if (realSdkInt() >= Build.VERSION_CODES.LOLLIPOP) {
                         codec.getOutputBuffer(index)
                     } else {
                         codec.outputBuffers[index]

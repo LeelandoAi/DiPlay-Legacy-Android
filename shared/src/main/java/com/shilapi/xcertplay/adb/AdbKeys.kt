@@ -1,6 +1,7 @@
 package com.shilapi.xcertplay.adb
 
 import android.content.Context
+import com.shilapi.xcertplay.compat.realSdkInt
 import java.io.File
 import java.math.BigInteger
 import java.nio.ByteBuffer
@@ -32,7 +33,7 @@ object AdbKeys {
     /** Loads the key from app-private storage, or makes one on first use. */
     @Synchronized
     fun load(context: Context): KeyPair {
-        val privateRoot = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) context.noBackupFilesDir else context.filesDir
+        val privateRoot = if (realSdkInt() >= android.os.Build.VERSION_CODES.LOLLIPOP) context.noBackupFilesDir else context.filesDir
         val dir = File(privateRoot, DIR)
         val privateFile = File(dir, PRIVATE)
         val publicFile = File(dir, PUBLIC)

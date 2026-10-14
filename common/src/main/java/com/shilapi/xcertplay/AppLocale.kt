@@ -5,6 +5,7 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.app.LocaleManager
 import android.os.Build
+import com.shilapi.xcertplay.compat.realSdkInt
 import android.os.LocaleList
 import android.content.Context
 import android.content.res.Configuration
@@ -96,14 +97,14 @@ object AppLocale {
     @Suppress("DEPRECATION")
     fun enforce(context: Context): Boolean {
         if (Build.VERSION.SDK_INT >= 33) return false
-        val systemLocale = if (Build.VERSION.SDK_INT >= 24) {
+        val systemLocale = if (realSdkInt() >= 24) {
             Resources.getSystem().configuration.locales[0]
         } else {
             Resources.getSystem().configuration.locale
         }
         val locale = locale(preference(context)) ?: systemLocale
         val resources = context.resources
-        val currentLocale = if (Build.VERSION.SDK_INT >= 24) {
+        val currentLocale = if (realSdkInt() >= 24) {
             resources.configuration.locales[0]
         } else {
             resources.configuration.locale

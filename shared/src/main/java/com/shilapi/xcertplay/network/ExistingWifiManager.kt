@@ -9,6 +9,7 @@ import android.net.NetworkRequest
 import android.net.wifi.WifiInfo
 import android.net.wifi.WifiManager
 import android.os.Build
+import com.shilapi.xcertplay.compat.realSdkInt
 import android.os.Looper
 import com.shilapi.xcertplay.orchestration.ManualHotspotValidation
 import com.shilapi.xcertplay.transport.Iap2WirelessSecurity
@@ -25,13 +26,13 @@ class ExistingWifiManager(
     private val onDiagnostic: (String) -> Unit = {},
     private val onNetworkChanged: () -> Unit = {},
 ) : WirelessHotspotManager {
-    private val connectivity = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+    private val connectivity = if (realSdkInt() >= Build.VERSION_CODES.M) {
         context.applicationContext.getSystemService(ConnectivityManager::class.java)
     } else {
         @Suppress("DEPRECATION")
         context.applicationContext.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
     } ?: throw IllegalStateException("ConnectivityManager is unavailable")
-    private val wifi = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+    private val wifi = if (realSdkInt() >= Build.VERSION_CODES.M) {
         context.applicationContext.getSystemService(WifiManager::class.java)
     } else {
         @Suppress("DEPRECATION")
@@ -48,7 +49,7 @@ class ExistingWifiManager(
     private var callbackRegistered = false
     private var legacy: LegacyExistingWifi? = null
 
-    private val callback by lazy { if (Build.VERSION.SDK_INT >= 21) modernCallback() else null }
+    private val callback by lazy { if (realSdkInt() >= 21) modernCallback() else null }
 
     @androidx.annotation.RequiresApi(21)
     private fun modernCallback() = object : ConnectivityManager.NetworkCallback() {
@@ -68,7 +69,7 @@ class ExistingWifiManager(
     }
 
     override fun start(timeoutMillis: Long): WirelessHotspotInfo {
-        if (Build.VERSION.SDK_INT < 21) {
+        if (realSdkInt() < 21) {
             val adapter = synchronized(lock) {
                 check(!closed) { "Existing Wi-Fi attachment was cancelled" }
                 LegacyExistingWifi(connectivity, wifi, ssid, passphrase,
@@ -209,7 +210,7 @@ class ExistingWifiManager(
         synchronized(lock) {
             closed = true
             legacy?.close()
-            if (Build.VERSION.SDK_INT >= 21 && callbackRegistered) {
+            if (realSdkInt() >= 21 && callbackRegistered) {
                 connectivity.unregisterNetworkCallback(checkNotNull(callback))
                 callbackRegistered = false
             }

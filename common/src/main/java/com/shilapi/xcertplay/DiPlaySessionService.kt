@@ -52,9 +52,9 @@ class DiPlaySessionService : Service() {
             builder.addAction(0, "Disconnect", stop)
         }
         val notification = builder.build()
-        if (Build.VERSION.SDK_INT >= 29) {
+        if (realSdkInt() >= 29) {
             var types = ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
-            if (Build.VERSION.SDK_INT >= 30 && checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+            if (realSdkInt() >= 30 && checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
                 types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
             }
             // Without it Android stops location updates while another car app (the reversing camera,

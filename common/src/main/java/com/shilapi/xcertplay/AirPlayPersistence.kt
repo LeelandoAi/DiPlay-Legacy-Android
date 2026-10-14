@@ -2,6 +2,7 @@ package com.shilapi.xcertplay
 
 import android.content.Context
 import android.os.Build
+import com.shilapi.xcertplay.compat.realSdkInt
 import com.shilapi.xcertplay.airplay.AirPlayDisplaySettings
 import com.shilapi.xcertplay.airplay.AirPlayPhysicalSizeBasis
 import com.shilapi.xcertplay.airplay.CarPlayDisplayScale
@@ -574,7 +575,7 @@ object AirPlayPersistence {
      */
     fun loadDirectSurfaceView(context: Context): Boolean {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        val defaultMode = android.os.Build.VERSION.SDK_INT <= android.os.Build.VERSION_CODES.M
+        val defaultMode = realSdkInt() <= android.os.Build.VERSION_CODES.M
         return prefs.getBoolean(KEY_DIRECT_SURFACE_VIEW, defaultMode)
     }
 

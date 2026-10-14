@@ -5,6 +5,7 @@ import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
 import android.net.wifi.WifiManager
 import android.os.Build
+import com.shilapi.xcertplay.compat.realSdkInt
 import android.util.Log
 import com.shilapi.xcertplay.airplay.AirPlayConfig
 import com.shilapi.xcertplay.airplay.AirPlayIdentity
@@ -202,7 +203,7 @@ class CarPlayBonjour(
     private val multicastLock = ((context.applicationContext ?: context).let { ctx ->
         (ctx.getSystemService(Context.WIFI_SERVICE) as? WifiManager)
             ?: runCatching {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) ctx.getSystemService(WifiManager::class.java) else null
+                if (realSdkInt() >= Build.VERSION_CODES.M) ctx.getSystemService(WifiManager::class.java) else null
             }.getOrNull()
     })?.createMulticastLock("carplay-bonjour")?.apply { setReferenceCounted(false) }
 
@@ -435,7 +436,7 @@ class CarPlayBonjour(
             serviceName = config.deviceName
             serviceType = AIRPLAY_SERVICE_TYPE
             port = config.port
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            if (realSdkInt() >= Build.VERSION_CODES.LOLLIPOP) {
                 CarPlayBonjourProtocol.airPlayTxtRecords(config, identity).forEach { (key, value) ->
                     setAttribute(key, value)
                 }
@@ -505,7 +506,7 @@ class CarPlayBonjour(
         if (port !in 1..65535) return
         val serviceName = resolved.serviceName ?: service.serviceName ?: return
         val host = address.hostAddress ?: return
-        val bluetoothId = (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) resolved.attributes else null)
+        val bluetoothId = (if (realSdkInt() >= Build.VERSION_CODES.LOLLIPOP) resolved.attributes else null)
             ?.get("id")
             ?.let(::decodeTxtValue)
             ?.takeIf { it.isNotBlank() }

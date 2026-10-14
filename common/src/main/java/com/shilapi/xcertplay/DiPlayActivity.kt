@@ -4225,7 +4225,7 @@ class DiPlayActivity : ComponentActivity() {
         // Some head units omit or disable DocumentsUI. Launch itself can throw, before
         // the result callback and the background writer's exception handler ever run.
         if (exportInProgress) return
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) {
+        if (realSdkInt() < Build.VERSION_CODES.LOLLIPOP) {
             // Use our own USB volume picker: KitKat DocumentsUI often hides vendor mounts.
             val choices = DiagnosticExportStore.availableUsbVolumes(applicationContext)
             if (choices.isEmpty()) {
@@ -4479,7 +4479,7 @@ class DiPlayActivity : ComponentActivity() {
                 isAllCaps = false
                 textSize = 16f
                 minHeight = dp(48)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) stateListAnimator = null
+                if (realSdkInt() >= Build.VERSION_CODES.LOLLIPOP) stateListAnimator = null
                 setOnClickListener {
                     val previous = navigationStreamType
                     navigationStreamType = i
@@ -4628,9 +4628,9 @@ class DiPlayActivity : ComponentActivity() {
         typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
         background = compatibleRipple(ColorStateList.valueOf(RIPPLE), rounded(if (primary) ACCENT else BUTTON, if (primary) ACCENT else BORDER), null)
         setPadding(dp(16), 0, dp(16), 0); minHeight = dp(56)
-        if (Build.VERSION.SDK_INT >= 21) stateListAnimator = null
+        if (realSdkInt() >= 21) stateListAnimator = null
         compoundDrawablePadding = dp(12)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) foreground = focusRing()
+        if (realSdkInt() >= Build.VERSION_CODES.M) foreground = focusRing()
         text = title
         searchIndexSink?.add(title.substringBefore(VALUE_SEPARATOR))
         setOnClickListener { click() }

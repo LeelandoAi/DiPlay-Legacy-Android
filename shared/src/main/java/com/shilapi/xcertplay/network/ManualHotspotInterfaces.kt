@@ -7,6 +7,7 @@ import android.net.NetworkCapabilities
 import android.net.TetheringInterface
 import android.net.TetheringManager
 import android.os.Build
+import com.shilapi.xcertplay.compat.realSdkInt
 import androidx.annotation.RequiresApi
 import java.io.Closeable
 import java.io.File
@@ -17,7 +18,7 @@ internal class ManualHotspotInterfaces(
     private val context: Context,
     private val onDiagnostic: (String) -> Unit = {},
 ) : Closeable {
-    private val connectivity = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+    private val connectivity = if (realSdkInt() >= Build.VERSION_CODES.M) {
         context.getSystemService(ConnectivityManager::class.java)
     } else {
         @Suppress("DEPRECATION")
@@ -31,14 +32,14 @@ internal class ManualHotspotInterfaces(
         val before = runCatching { networkToken() }
         val upstreams = runCatching {
             checkNotNull(connectivity)
-            if (Build.VERSION.SDK_INT < 21) legacyWifiUpstreams() else connectivity.allNetworks.mapNotNull { network ->
+            if (realSdkInt() < 21) legacyWifiUpstreams() else connectivity.allNetworks.mapNotNull { network ->
                 val caps = checkNotNull(connectivity.getNetworkCapabilities(network))
                 val links = checkNotNull(connectivity.getLinkProperties(network))
                 links.interfaceName?.takeIf { caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) }
             }.toSet()
         }.getOrNull()
         val defaultName = runCatching {
-            if (Build.VERSION.SDK_INT >= 23) connectivity?.activeNetwork?.let { connectivity?.getLinkProperties(it)?.interfaceName }
+            if (realSdkInt() >= 23) connectivity?.activeNetwork?.let { connectivity?.getLinkProperties(it)?.interfaceName }
             else if (connectivity?.activeNetworkInfo?.type == ConnectivityManager.TYPE_WIFI) upstreams?.singleOrNull() else null
         }.getOrNull()
         val interfaces = runCatching {
@@ -61,7 +62,7 @@ internal class ManualHotspotInterfaces(
         )
     }
 
-    private fun networkToken(): Any? = if (Build.VERSION.SDK_INT >= 23) connectivity?.activeNetwork
+    private fun networkToken(): Any? = if (realSdkInt() >= 23) connectivity?.activeNetwork
         else connectivity?.activeNetworkInfo?.let { "${it.type}:${it.isConnected}:${it.extraInfo}" }
 
     private fun legacyWifiUpstreams(): Set<String> {

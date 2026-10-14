@@ -6,6 +6,7 @@ import android.net.wifi.SoftApConfiguration
 import android.net.wifi.WifiConfiguration
 import android.net.wifi.WifiManager
 import android.os.Build
+import com.shilapi.xcertplay.compat.realSdkInt
 import android.os.Looper
 import android.util.Log
 import com.shilapi.xcertplay.orchestration.ManualHotspotBand
@@ -39,7 +40,7 @@ class ManualHotspotManager(
     private val waitLock = Object()
     private var confirmed: HotspotSelection? = null
     private var lastSampleLog = emptyList<String>()
-    private val wifiManager = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+    private val wifiManager = if (realSdkInt() >= Build.VERSION_CODES.M) {
         appContext.getSystemService(WifiManager::class.java)
     } else {
         @Suppress("DEPRECATION")
@@ -227,7 +228,7 @@ class ManualHotspotManager(
     }
 
     private fun frequencyFromConnectionInfo(): Int? {
-        if (Build.VERSION.SDK_INT < 21) return null
+        if (realSdkInt() < 21) return null
         val connectionInfo = try {
             wifiManager.connectionInfo
         } catch (_: SecurityException) {
