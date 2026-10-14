@@ -16,6 +16,7 @@ import android.hardware.usb.UsbRequest
 import android.os.Build
 import android.os.SystemClock
 import android.util.Log
+import com.shilapi.xcertplay.compat.realSdkInt
 import java.io.Closeable
 import java.io.IOException
 import java.nio.ByteBuffer
@@ -480,18 +481,18 @@ class Iap2UsbSession internal constructor(
     private var readRequest: UsbRequest? = null
     private var readQueued = false
     private val directReadBuffer = ByteBuffer.allocateDirect(
-        usbTransferSize(Build.VERSION.SDK_INT, USBMUX_READ_CHUNK_BYTES)
+        usbTransferSize(realSdkInt(), USBMUX_READ_CHUNK_BYTES)
     )
     private val syncReadBuffer = ByteArray(USBFS_BULK_URB_CEILING_BYTES)
     private val readQueuePolicy = UsbReadQueuePolicy(
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) USBFS_BULK_URB_CEILING_BYTES else Int.MAX_VALUE,
+        if (realSdkInt() < Build.VERSION_CODES.P) USBFS_BULK_URB_CEILING_BYTES else Int.MAX_VALUE,
     )
 
     fun write(data: ByteArray, timeoutMillis: Int) = synchronized(writeLock) {
         checkOpen()
         require(timeoutMillis > 0) { "timeoutMillis must be positive" }
         if (data.isEmpty()) return@synchronized
-        val transferred = writeUsbChunks(data.size, Build.VERSION.SDK_INT, timeoutMillis) { offset, count, timeout ->
+        val transferred = writeUsbChunks(data.size, realSdkInt(), timeoutMillis) { offset, count, timeout ->
             connection.bulkTransfer(outEndpoint, data, offset, count, timeout)
         }
         if (transferred != data.size) {
@@ -511,7 +512,7 @@ class Iap2UsbSession internal constructor(
     fun read(timeoutMillis: Long): ByteArray? = synchronized(readLock) {
         checkOpen()
         require(timeoutMillis > 0) { "timeoutMillis must be positive" }
-        if (Build.VERSION.SDK_INT < ASYNC_USB_READ_MIN_SDK) {
+        if (realSdkInt() < ASYNC_USB_READ_MIN_SDK) {
             return@synchronized readSynchronously(timeoutMillis)
         }
         var acceptedFallback: UsbReadQueueResult? = null
@@ -630,7 +631,7 @@ class Iap2UsbSession internal constructor(
         sharedConnection.release()
         requestToCancel?.let(sharedConnection::forget)
         if (requestToCancel == null || reaped || !cancelled ||
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+            realSdkInt() >= Build.VERSION_CODES.O
         ) {
             runCatching { requestToCancel?.close() }
         }
