@@ -4254,6 +4254,7 @@ class DiPlayActivity : ComponentActivity() {
         val requestedRoot = preferredReportRoot
         preferredReportRoot = null
         Thread({
+            var builtReport: String? = null
             val result = runCatching {
                 val report = buildString {
                     appendLine("DiPlay ${version()} · private beta diagnostic report")
@@ -4331,6 +4332,7 @@ class DiPlayActivity : ComponentActivity() {
                     DiagnosticExportStore.write(appContext.contentResolver, uri, report)
                     DiagnosticExportStore.SavedReport(uri)
                 } else DiagnosticExportStore.saveWithoutPicker(appContext, fileName, report, requestedRoot)
+                builtReport = report
                 savedReport to report
             }
             runOnUiThread {
@@ -4359,9 +4361,17 @@ class DiPlayActivity : ComponentActivity() {
                             }.onFailure { showDiagnosticReport(report) }
                         }.show()
                 } else {
+                    val failedReport = builtReport
                     AlertDialog.Builder(this).setTitle(getString(R.string.could_not_save_the_report))
                         .setMessage(getString(R.string.check_that_storage_is_available_or_choose_another_save_loc))
                         .setPositiveButton(getString(R.string.choose_location)) { _, _ -> chooseReportDestination() }
+                        .apply {
+                            if (failedReport != null) {
+                                setNeutralButton(getString(R.string.view_diagnostic_report)) { _, _ ->
+                                    showDiagnosticReport(failedReport)
+                                }
+                            }
+                        }
                         .setNegativeButton(getString(R.string.close), null).show()
                 }
             }
