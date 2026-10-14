@@ -3,7 +3,7 @@
     "name": "English",
     "dir": "ltr",
     "tag": "Legacy Android compatibility edition (Android 4.2+)",
-    "badge": "v0.2.60 RELEASE",
+    "badge": "v0.2.61 RELEASE",
     "title": "Your iPhone.\nCarPlay for legacy Android head units.",
     "intro": "DiPlay Legacy brings wired and wireless CarPlay to older Android head units (Android 4.2 / API 17+), with native multi-architecture support (ARMv7, x86, ARM64).",
     "download": "Download APK",
@@ -25,10 +25,11 @@
     ],
     "adb": "Installation & connection help",
     "bssid": "ADB is not required for everyday use. APK installation options depend on the car. No manual MAC address entry.",
-    "whats": "New in v0.2.60",
+    "whats": "New in v0.2.61",
     "features": [
-      "Wired mDNS: add multicast replies for non-QU queries while retaining unicast replies and the unicast-only QU path.",
-      "Crash reports: detect cyclic causes and bound cause depth and stack length to prevent the reporter from overflowing."
+      "Fix AirPlay crypto class loading on Android 4.2 while retaining authentication-tag validation.",
+      "Fix connection-screen video-window checks on Android 4.2/4.3 to avoid calling an API 19 method.",
+      "Wireless startup attempts to turn on Bluetooth and waits up to 3 seconds; a clear error remains if it stays off."
     ],
     "compat": "Before you try it",
     "compatText": "Refactored and maintained for legacy head units. Install over an existing version only when the package and signing certificate match. Upstream or Debug-signed versions may require reinstalling; save your settings and reports first.",
@@ -51,7 +52,7 @@
     "name": "العربية",
     "dir": "rtl",
     "tag": "مشروع مجتمعي مستقل",
-    "badge": "v0.2.60",
+    "badge": "v0.2.61",
     "title": "آيفونك.\nعلى شاشة سيارتك.",
     "intro": "خرائطك وموسيقاك ومحادثاتك على شاشة السيارة. يوفّر DiPlay كار بلاي سلكياً ولاسلكياً لشاشات أندرويد المتوافقة، بواجهة مألوفة من DiAuto.",
     "download": "تنزيل APK",
@@ -73,10 +74,11 @@
     ],
     "adb": "دليل التثبيت والمساعدة في الاتصال",
     "bssid": "لا تحتاج إلى ADB للاستخدام اليومي. تختلف طريقة تثبيت APK حسب السيارة. لا حاجة لإدخال عنوان MAC يدوياً.",
-    "whats": "v0.2.60",
+    "whats": "v0.2.61",
     "features": [
-      "mDNS السلكي: إضافة ردود متعددة البث للاستعلامات دون QU، مع الإبقاء على الرد الأحادي واستخدامه وحده لاستعلامات QU.",
-      "تقارير الأعطال: اكتشاف الأسباب الدائرية وتحديد عمق سلسلة الأسباب وطول التتبع لمنع تجاوز المكدس أثناء إعداد التقرير."
+      "إصلاح تحميل فئة تشفير AirPlay على Android 4.2 مع الحفاظ على التحقق من علامة المصادقة.",
+      "إصلاح فحص نافذة الفيديو في شاشة الاتصال على Android 4.2/4.3 لتجنب استدعاء طريقة تتطلب API 19.",
+      "يحاول بدء الاتصال اللاسلكي تشغيل Bluetooth وينتظر حتى 3 ثوانٍ، مع رسالة واضحة إذا بقي متوقفاً."
     ],
     "compat": "قبل التجربة",
     "compatText": "نسخة تجريبية عامة غير معتمدة من Apple. تستخدم المصادقة هوية ملحق تجريبية مستخرجة من برنامج ثابت منشور، ولا يُضمن استمرار قبولها مستقبلاً. قد يستمر التقطّع أو عدم تطبيق حجم الأيقونات على بعض الشاشات. ابدأ بمعدل 30 إطاراً مع تعطيل HEVC، وجرّب دقة أقل عند الحاجة.",
@@ -99,7 +101,7 @@
     "name": "Русский",
     "dir": "ltr",
     "tag": "Независимый проект сообщества",
-    "badge": "v0.2.60",
+    "badge": "v0.2.61",
     "title": "Ваш iPhone.\nНа экране автомобиля.",
     "intro": "Карты, музыка и общение на экране автомобиля. DiPlay добавляет проводной и беспроводной CarPlay на совместимые головные устройства Android со знакомым интерфейсом DiAuto.",
     "download": "Скачать APK",
@@ -121,10 +123,11 @@
     ],
     "adb": "Инструкция и помощь с подключением",
     "bssid": "Для повседневной работы ADB не нужен. Способ установки APK зависит от автомобиля. Вводить MAC-адрес вручную не требуется.",
-    "whats": "v0.2.60",
+    "whats": "v0.2.61",
     "features": [
-      "Проводной mDNS: добавлены многоадресные ответы на запросы без QU; сохранены одноадресные ответы и прежний режим QU.",
-      "Отчёты о сбоях: обнаружение циклических причин и ограничение глубины цепочки и длины стека предотвращают переполнение при записи отчёта."
+      "Исправлена загрузка класса шифрования AirPlay на Android 4.2 с сохранением проверки тега аутентификации.",
+      "Исправлена проверка видеоокна на экране подключения Android 4.2/4.3, исключён вызов метода API 19.",
+      "Перед беспроводным запуском приложение пытается включить Bluetooth и ждёт до 3 секунд; при неудаче остаётся понятное сообщение."
     ],
     "compat": "Перед установкой",
     "compatText": "Предварительная версия для открытого тестирования, без сертификации Apple. Используется экспериментальная идентификация аксессуара из общедоступной прошивки; её принятие в будущем не гарантируется. На некоторых устройствах остаются рывки изображения или не применяется размер значков. Начните с 30 кадров/с и выключенного HEVC; при необходимости снизьте разрешение.",
@@ -147,7 +150,7 @@
     "name": "Українська",
     "dir": "ltr",
     "tag": "Незалежний проєкт спільноти",
-    "badge": "v0.2.60",
+    "badge": "v0.2.61",
     "title": "Ваш iPhone.\nЯк удома у вашому авто.",
     "intro": "Карти, музика й розмови на екрані автомобіля. DiPlay додає дротовий і бездротовий CarPlay на сумісні головні пристрої Android зі звичним інтерфейсом DiAuto.",
     "download": "Завантажити APK",
@@ -169,10 +172,11 @@
     ],
     "adb": "Довідка зі встановлення й підключення",
     "bssid": "Для щоденного користування ADB не потрібен. Способи встановлення APK залежать від автомобіля. Вводити MAC-адресу вручну не потрібно.",
-    "whats": "v0.2.60",
+    "whats": "v0.2.61",
     "features": [
-      "Дротовий mDNS: додано багатоадресні відповіді на запити без QU; збережено одноадресні відповіді та попередній режим QU.",
-      "Звіти про збої: виявлення циклічних причин і обмеження глибини ланцюжка та довжини стека запобігають переповненню під час створення звіту."
+      "Виправлено завантаження класу шифрування AirPlay на Android 4.2 зі збереженням перевірки тегу автентифікації.",
+      "Виправлено перевірку відеовікна на екрані підключення Android 4.2/4.3, усунуто виклик методу API 19.",
+      "Перед бездротовим запуском застосунок намагається ввімкнути Bluetooth і чекає до 3 секунд; у разі невдачі залишається зрозуміле повідомлення."
     ],
     "compat": "Перш ніж спробувати",
     "compatText": "Це відкрита попередня версія, а не продукт, сертифікований Apple. Автентифікація використовує експериментальну ідентичність аксесуара, відновлену з публічної прошивки; що вона працюватиме й надалі, не гарантовано. На деяких головних пристроях досі бувають ривки або не діє зміна розміру значків. Почніть із 30 кадрів/с і вимкненим HEVC; за потреби спробуйте нижчу роздільність.",
@@ -195,7 +199,7 @@
     "name": "Español",
     "dir": "ltr",
     "tag": "Proyecto comunitario independiente",
-    "badge": "v0.2.60",
+    "badge": "v0.2.61",
     "title": "Tu iPhone.\nEn la pantalla de tu coche.",
     "intro": "Mapas, música y conversaciones en la pantalla del coche. DiPlay ofrece CarPlay por USB e inalámbrico en unidades Android compatibles, con la interfaz familiar de DiAuto.",
     "download": "Descargar APK",
@@ -217,10 +221,11 @@
     ],
     "adb": "Guía de instalación y conexión",
     "bssid": "No necesitas ADB para el uso diario. El método de instalación del APK depende del coche. No hay que introducir direcciones MAC.",
-    "whats": "v0.2.60",
+    "whats": "v0.2.61",
     "features": [
-      "mDNS por cable: añade respuestas multidifusión para consultas sin QU, conservando las respuestas unicast y el modo QU solo unicast.",
-      "Informes de fallos: detecta causas cíclicas y limita la profundidad y la longitud de la pila para evitar desbordamientos al generar el informe."
+      "Corrige la carga de la clase de cifrado AirPlay en Android 4.2 y conserva la validación de la etiqueta de autenticación.",
+      "Corrige la comprobación de la ventana de vídeo al conectar en Android 4.2/4.3 para evitar llamar a un método de API 19.",
+      "El inicio inalámbrico intenta activar Bluetooth y espera hasta 3 segundos; mantiene un error claro si sigue apagado."
     ],
     "compat": "Antes de probar",
     "compatText": "Versión preliminar pública sin certificación de Apple. Usa una identidad de accesorio experimental obtenida de firmware público; no se garantiza su aceptación futura. Algunos equipos aún presentan tirones o no aplican los cambios de tamaño de iconos. Empieza con 30 fps y HEVC desactivado; reduce la resolución si hace falta.",
@@ -243,7 +248,7 @@
     "name": "简体中文",
     "dir": "ltr",
     "tag": "深度兼容老款车机版本 (Android 4.2+)",
-    "badge": "v0.2.60 发布版",
+    "badge": "v0.2.61 发布版",
     "title": "你的 iPhone。\n老款安卓车机的 CarPlay 方案。",
     "intro": "DiPlay Legacy 专为老款 Android 车机（最低支持 Android 4.2 / API 17）深度优化，提供有线与无线 CarPlay 互联体验，支持 ARMv7、x86、ARM64 等多种硬件芯片架构。",
     "download": "下载 APK",
@@ -265,10 +270,11 @@
     ],
     "adb": "安装与连接指南",
     "bssid": "日常使用不需要 ADB。APK 安装方式取决于车机。无需手动输入 MAC 地址。",
-    "whats": "v0.2.60 更新亮点",
+    "whats": "v0.2.61 更新亮点",
     "features": [
-      "有线 mDNS：非 QU 查询补发组播应答，保留单播路径；QU 查询仍只使用单播应答。",
-      "崩溃报告：识别循环 cause 链并限制深度和堆栈长度，避免报告生成时堆栈溢出。"
+      "修复 Android 4.2 加载 AirPlay 加密类时的 VerifyError，保留认证标签校验。",
+      "修复 Android 4.2/4.3 连接界面的视频窗口检测，避免调用 API 19 方法而崩溃。",
+      "无线启动前尝试开启蓝牙并最多等待 3 秒；仍未开启时显示明确的失败提示。"
     ],
     "compat": "试用前请了解",
     "compatText": "本项目基于开源项目 xcertplay / DiPlay 深度重构与兼容，内置离线认证材料。同包名、同签名版本可覆盖升级；签名不同的上游或 Debug 版本可能需要重新安装，请先保存设置与诊断报告。老旧车机建议先使用 30 fps 并关闭 HEVC。",
@@ -291,7 +297,7 @@
     "name": "繁體中文（台灣）",
     "dir": "ltr",
     "tag": "深度相容老款車機版本 (Android 4.2+)",
-    "badge": "v0.2.60 發布版",
+    "badge": "v0.2.61 發布版",
     "title": "你的 iPhone。\n老款安卓車機的 CarPlay 方案。",
     "intro": "DiPlay Legacy 專為老款 Android 車機（最低支援 Android 4.2 / API 17）深度最佳化，提供有線與無線 CarPlay 互聯體驗，支援 ARMv7、x86、ARM64 等多種硬體架構。",
     "download": "下載 APK",
@@ -327,10 +333,11 @@
     "supportScope": "重點最佳化老款 Android 車機，支援各類車型有線與無線連線。",
     "newIssue": "建立新問題",
     "requires": "請安裝在車機上，支援 Android 4.2 (API 17) 及以上。老舊車機優先推薦使用有線 USB 連線（已針對全志 T3、MTK 等底層驅動與 GPU 硬體圖層渲染最佳化）。",
-    "whats": "v0.2.60 更新亮點",
+    "whats": "v0.2.61 更新亮點",
     "features": [
-      "有線 mDNS：非 QU 查詢補發多播回應，保留單播路徑；QU 查詢仍僅使用單播回應。",
-      "崩潰報告：識別循環 cause 鏈並限制深度和堆疊長度，避免產生報告時堆疊溢位。"
+      "修正 Android 4.2 載入 AirPlay 加密類別時的 VerifyError，保留認證標籤驗證。",
+      "修正 Android 4.2/4.3 連線介面的視訊視窗檢測，避免呼叫 API 19 方法而崩潰。",
+      "無線啟動前嘗試開啟藍牙並最多等待 3 秒；仍未開啟時顯示明確的失敗提示。"
     ],
     "diagnosticsTitle": "問題回報與日誌收集",
     "diagnosticsText": "如遇到連線異常，請在「設定 → 診斷」中儲存診斷報告，並在 GitHub Issues 中提交回報：https://github.com/programmerguohuajing/DiPlay-Legacy-Android/issues"

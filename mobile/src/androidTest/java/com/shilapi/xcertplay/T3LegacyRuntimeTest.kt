@@ -13,6 +13,7 @@ import android.view.ViewGroup
 import android.widget.TextView
 import androidx.test.platform.app.InstrumentationRegistry
 import com.shilapi.xcertplay.airplay.*
+import com.shilapi.xcertplay.host.R
 import com.shilapi.xcertplay.media.AndroidMediaSink
 import com.shilapi.xcertplay.network.CarPlayVpnService
 import org.junit.Assert.*
@@ -35,11 +36,15 @@ class T3LegacyRuntimeTest {
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         try {
             instrumentation.runOnMainSync {
-                val settings = texts(activity.window.decorView).first { it.text.toString() == "Settings" }
+                val settings = texts(activity.window.decorView).first { it.text.toString() == activity.getString(R.string.settings) }
                 assertTrue(settings.performClick())
             }
             instrumentation.waitForIdleSync()
-            for (title in listOf("Connection", "Display", "Audio", "Navigation", "Vehicle", "Diagnostics", "Advanced")) {
+            // The app language can differ from the emulator system language.
+            val titles = listOf(R.string.connection, R.string.settings_display, R.string.audio,
+                R.string.settings_navigation, R.string.settings_vehicle, R.string.diagnostics,
+                R.string.settings_advanced).map { activity.getString(it) }
+            for (title in titles) {
                 instrumentation.runOnMainSync {
                     val row = texts(activity.window.decorView).firstOrNull { it.text.toString() == title }
                     assertNotNull("Missing category $title", row)
@@ -49,6 +54,9 @@ class T3LegacyRuntimeTest {
                 }
                 instrumentation.waitForIdleSync()
                 assertFalse(activity.isFinishing)
+                // Compact screens show category links on Overview rather than a persistent rail.
+                instrumentation.runOnMainSync { activity.onBackPressed() }
+                instrumentation.waitForIdleSync()
             }
         } finally { instrumentation.runOnMainSync { activity.finish() } }
     }
@@ -99,6 +107,18 @@ class T3LegacyRuntimeTest {
         val nonce = AirPlayCrypto.nonce64(1)
         val sealed = AirPlayCrypto.chachaSeal(key, nonce, payload)
         assertArrayEquals(payload, AirPlayCrypto.chachaOpen(key, nonce, sealed))
+    }
+
+    @Test fun chachaRejectsTamperedCiphertextWithoutLegacyClassLinkageFailure() {
+        val key = ByteArray(32) { it.toByte() }
+        val nonce = AirPlayCrypto.nonce64(2)
+        val payload = byteArrayOf(1, 2, 3, 4)
+        val sealed = AirPlayCrypto.chachaSeal(key, nonce, payload)
+        assertArrayEquals(payload, AirPlayCrypto.chachaOpen(key, nonce, sealed))
+        val tampered = sealed.copyOf().apply { this[lastIndex] = (this[lastIndex].toInt() xor 1).toByte() }
+        val failure = runCatching { AirPlayCrypto.chachaOpen(key, nonce, tampered) }.exceptionOrNull()
+        assertNotNull("Modified authentication tag must be rejected", failure)
+        assertFalse("Crypto must verify and load on legacy Android", failure is LinkageError)
     }
 
     @Test fun bundledAuthenticationLoadsAndSignsLocally() {
@@ -244,7 +264,8 @@ class T3LegacyRuntimeTest {
         try {
             assertTrue(bound.await(5, TimeUnit.SECONDS))
             val address = InetAddress.getByName("127.0.0.1")
-            ServerSocket(0, 1, address).use { occupied ->
+            val occupied = ServerSocket(0, 1, address)
+            try {
                 repeat(2) {
                     val result = service!!.attachWireless(address,
                         AirPlayConfig(deviceName = "T3 KitKat runtime test", deviceId = "02:00:00:00:00:02",
@@ -265,7 +286,7 @@ class T3LegacyRuntimeTest {
                     service!!.detach()
                     assertFalse(service!!.isAttached())
                 }
-            }
+            } finally { occupied.close() }
         } finally { service?.detach(); context.unbindService(connection) }
     }
 

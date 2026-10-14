@@ -4841,8 +4841,14 @@ class CarPlayHostActivity : ComponentActivity() {
     private fun observeVideoWindow(texture: TextureView) {
         val probe = object : ViewTreeObserver.OnPreDrawListener {
             override fun onPreDraw(): Boolean {
-                // ViewCompat handles API < 19 where View.isAttachedToWindow doesn't exist.
-                if (!androidx.core.view.ViewCompat.isAttachedToWindow(texture)) return true
+                // Current ViewCompat delegates directly to the API 19 method.
+                // API 17/18 must inspect the window token without invoking that method.
+                val attached = if (realSdkInt() >= Build.VERSION_CODES.KITKAT) {
+                    texture.isAttachedToWindow
+                } else {
+                    texture.windowToken != null
+                }
+                if (!attached) return true
                 removeVideoSurfaceProbe()
                 if (isDestroyed || videoView !== texture) return true
                 val mode = carPlayVideoSurfaceMode(texture.isHardwareAccelerated, smoothVideo, directSurfaceView)

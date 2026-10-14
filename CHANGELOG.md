@@ -1,3 +1,12 @@
+# DiPlay 0.2.61 — 2026-10-15
+
+- Remove the direct API 21 AEADBadTagException reference so AirPlay crypto verifies on Android 4.2, preserving authentication-tag rejection.
+- Use a window-token attachment check on Android 4.2/4.3 to avoid an API 19 method call when opening the connection screen.
+- Try enabling the hybrid Bluetooth adapter before wireless startup, with a bounded wait and the existing failure message if it stays off.
+- Add legacy Android instrumentation coverage for authenticated decryption and tampered-ciphertext rejection.
+
+See [v0.2.61 release notes](docs/RELEASE-NOTES-0.2.61.md) for validation and device-testing limits.
+
 # DiPlay 0.2.60 — 2026-10-14
 
 - Send an additional multicast mDNS response for non-QU wired queries while preserving the unicast path and unicast-only QU responses.
