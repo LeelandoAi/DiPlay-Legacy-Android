@@ -1,4 +1,4 @@
-package com.shilapi.xcertplay.orchestration
+﻿package com.shilapi.xcertplay.orchestration
 
 import android.Manifest
 import android.bluetooth.BluetoothAdapter
@@ -322,7 +322,7 @@ class CarPlayController(
             }
             activeSession = session
             if (replacement) restoreDashboardContent(session)
-            // Issue #95: wired first-TCP watchdog — a session only becomes active after the
+            // Issue #95: wired first-TCP watchdog 鈥?a session only becomes active after the
             // iPhone opened the AirPlay TCP connection and completed the handshake.
             if (config.transport != CarPlayTransport.WIRELESS) wiredTcpArrived.set(true)
             debugLog(
@@ -1181,11 +1181,11 @@ class CarPlayController(
         var stage = "hotspot startup"
         try {
             debugLog("wireless bring-up generation=$generation starting")
-            // Issue #79: without a Bluetooth adapter, wireless CarPlay is impossible —
+            // Issue #79: without a Bluetooth adapter, wireless CarPlay is impossible 鈥?
             // iPhone needs Bluetooth for discovery/pairing. Fail fast instead of waiting
             // 60s for a Wi-Fi connection that will never come.
             // Issue #138: gate on the hybrid adapter (vendor service + standard Android),
-            // not the raw Android adapter alone — on some head units (e.g. ECARX E01)
+            // not the raw Android adapter alone 鈥?on some head units (e.g. ECARX E01)
             // Bluetooth only works through the vendor Bluetooth service while
             // getDefaultAdapter() reports null or disabled.
             val hybridBt = CarPlayBluetoothManager.get(appContext)
@@ -1195,7 +1195,7 @@ class CarPlayController(
                         "for iPhone discovery. Use wired USB instead."
                 )
             }
-            // Issue #117: adapter present but switched off — the iPhone can never discover
+            // Issue #117: adapter present but switched off 鈥?the iPhone can never discover
             // the head unit, so fail fast with an actionable message instead of the 60s
             // Wi-Fi wait ending in "Timed out waiting for iPhone to connect over Wi-Fi hotspot".
             if (!hybridBt.isEnabled()) {
@@ -2342,7 +2342,7 @@ class CarPlayController(
                     debugLog("wired $message")
                     if (message.contains("carplay-start-session")) {
                         vpnService?.sendUnsolicitedNeighborAdvertisement(force = true)
-                        // Issue #95: arm the first-TCP watchdog — a new StartSession means any
+                        // Issue #95: arm the first-TCP watchdog 鈥?a new StartSession means any
                         // previous session no longer counts.
                         wiredTcpArrived.set(false)
                     }
@@ -2355,13 +2355,12 @@ class CarPlayController(
                         CarPlayStatus.Failed("Wired CarPlay control timed out at ${result.stage}; StartSession sent=${result.carPlayStartSessionsSent}")
                     Iap2WiredControlTerminal.CHANNEL_CLOSED ->
                         CarPlayStatus.Failed("CarPlay control channel closed")
-                    // Issue #84/#61: the iPhone went quiet long after StartSession — the old
-                    // code spun here forever on "控制通道运行中". Fail loudly so the existing
+                    // Issue #84/#61: the iPhone went quiet long after StartSession 鈥?the old
+                    // code spun here forever on "鎺у埗閫氶亾杩愯涓?. Fail loudly so the existing
                     // reconnect path rebuilds the link instead.
-                    Iap2WiredControlTerminal.PEER_SILENT ->
-                        CarPlayStatus.Failed("Wired CarPlay peer silent; resetting link")
+                    Iap2WiredControlTerminal.PEER_SILENT ->`r`n                        CarPlayStatus.Failed("Wired CarPlay peer silent; resetting link")`r`n                    Iap2WiredControlTerminal.Reused ->`r`n                        CarPlayStatus.Connected
                     // Issue #95: iPhone alive on iAP2 but never opened the AirPlay TCP
-                    // connection — fail fast instead of idling until USB wedges.
+                    // connection 鈥?fail fast instead of idling until USB wedges.
                     // Issue #155/#123: capture the kernel TCP-table snapshot here so the
                     // report shows whether injected SYNs ever reached the TCP stack.
                     Iap2WiredControlTerminal.NO_AIRPLAY_TCP -> {
@@ -3109,3 +3108,4 @@ class CarPlayController(
         private val BLUETOOTH_ADDRESS = Regex("^[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}$")
     }
 }
+
