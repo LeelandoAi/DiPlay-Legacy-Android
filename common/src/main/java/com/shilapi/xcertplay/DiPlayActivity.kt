@@ -4328,11 +4328,11 @@ class DiPlayActivity : ComponentActivity() {
                         }
                     }
                 }
+                builtReport = report
                 val savedReport = if (uri != null) {
                     DiagnosticExportStore.write(appContext.contentResolver, uri, report)
                     DiagnosticExportStore.SavedReport(uri)
                 } else DiagnosticExportStore.saveWithoutPicker(appContext, fileName, report, requestedRoot)
-                builtReport = report
                 savedReport to report
             }
             runOnUiThread {
