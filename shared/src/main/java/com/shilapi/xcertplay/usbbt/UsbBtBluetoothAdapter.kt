@@ -7,6 +7,7 @@ import android.content.IntentFilter
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
 import android.os.Build
+import com.shilapi.xcertplay.compat.realSdkInt
 import android.util.Log
 import com.shilapi.xcertplay.bluetooth.CarPlayBluetooth
 import com.shilapi.xcertplay.bluetooth.CarPlayBluetoothDevice
@@ -177,7 +178,7 @@ class UsbBtBluetoothAdapter(
             override fun onReceive(context: Context, intent: Intent) {
                 when (intent.action) {
                     permissionAction -> {
-                        val device = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        val device = if (realSdkInt() >= Build.VERSION_CODES.TIRAMISU) {
                             intent.getParcelableExtra(
                                 UsbManager.EXTRA_DEVICE,
                                 UsbDevice::class.java,
@@ -207,7 +208,7 @@ class UsbBtBluetoothAdapter(
                         }
                     }
                     UsbManager.ACTION_USB_DEVICE_DETACHED -> {
-                        val device = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        val device = if (realSdkInt() >= Build.VERSION_CODES.TIRAMISU) {
                             intent.getParcelableExtra(
                                 UsbManager.EXTRA_DEVICE,
                                 UsbDevice::class.java,
@@ -227,7 +228,7 @@ class UsbBtBluetoothAdapter(
         val filter = IntentFilter(permissionAction).apply {
             addAction(UsbManager.ACTION_USB_DEVICE_DETACHED)
         }
-        val registered = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        val registered = if (realSdkInt() >= Build.VERSION_CODES.TIRAMISU) {
             appContext.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
         } else {
             appContext.registerReceiver(receiver, filter)

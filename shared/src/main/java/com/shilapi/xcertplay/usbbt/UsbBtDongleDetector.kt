@@ -6,6 +6,7 @@ import android.content.Intent
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
 import android.os.Build
+import com.shilapi.xcertplay.compat.realSdkInt
 import android.util.Log
 import com.shilapi.xcertplay.usbbt.HciProtocol.USB_CLASS_WIRELESS_CONTROLLER
 import com.shilapi.xcertplay.usbbt.HciProtocol.USB_PROTOCOL_BLUETOOTH
@@ -139,7 +140,7 @@ class UsbBtDongleDetector(private val appContext: Context) {
         val intent = Intent(permissionAction(appContext.packageName))
             .setPackage(appContext.packageName)
         val flags = PendingIntent.FLAG_UPDATE_CURRENT or
-            (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) PendingIntent.FLAG_MUTABLE else 0)
+            (if (realSdkInt() >= Build.VERSION_CODES.S) PendingIntent.FLAG_MUTABLE else 0)
         val pi = PendingIntent.getBroadcast(appContext, 0, intent, flags)
         usbManager.requestPermission(dongle.device, pi)
         return PermissionState.RequestSent

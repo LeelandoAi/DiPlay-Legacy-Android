@@ -29,3 +29,11 @@ Obtain the file yourself from a public source, for example:
 Only use firmware for hardware you own, from a source you trust. When no
 file is present the loader reports "no firmware" and the app keeps the
 previous graceful-degradation behaviour (diagnostic hint only).
+
+## USB ports and hubs
+
+The dongle needs a free USB port. On head units whose ports are already
+taken (e.g. T3 with a dashcam + iPhone), use a USB hub for the dongle.
+Hub + dongle + iPhone coexistence on the head unit's USB host controller
+has not been verified on all units — if the dongle is not detected,
+try it without the hub first to rule out a hub problem.
