@@ -14,4 +14,12 @@ internal object DiagnosticRedactor {
         return line.replace(mac, "[address]").replace(identifier, "[identifier]")
             .replace(address, "[ip]").replace(ipv6, "[ip]").take(700)
     }
+
+    /**
+     * Redacts a possibly multi-line entry (e.g. a crash stack trace) line by line.
+     * [redact] drops any entry containing a newline, which used to discard whole crash
+     * records before they reached the exported report.
+     */
+    fun redactLines(text: String): List<String> =
+        text.lineSequence().mapNotNull { redact(it) }.toList()
 }

@@ -6,6 +6,7 @@ import android.net.wifi.SoftApConfiguration
 import android.net.wifi.WifiConfiguration
 import android.net.wifi.WifiManager
 import android.os.Build
+import com.shilapi.xcertplay.compat.realSdkInt
 import android.os.Handler
 import android.os.Looper
 import androidx.annotation.RequiresApi
@@ -90,7 +91,7 @@ class LocalOnlyHotspotManager(context: Context, private val onDiagnostic: (Strin
                 deadlineNanos = deadlineNanos,
             )
             val liveRadio = awaitRadioInfo(radioInfo, apInterface, configuration, attempt, deadlineNanos)
-            if (!LocalHotspotRadioPolicy.accepts(Build.VERSION.SDK_INT, liveRadio?.frequencyMHz, configuration.bandLabel)) {
+            if (!LocalHotspotRadioPolicy.accepts(realSdkInt(), liveRadio?.frequencyMHz, configuration.bandLabel)) {
                 throw IOException("This firmware did not provide the requested 5 GHz local hotspot; choose Wi-Fi Direct or Car hotspot")
             }
 
@@ -111,7 +112,7 @@ class LocalOnlyHotspotManager(context: Context, private val onDiagnostic: (Strin
             // channel degrades to the configuration's, the one this manager requested,
             // or 36 — in that order — and the phone joining is the real verification.
             val advertisedChannel = LocalHotspotRadioPolicy.channel(
-                Build.VERSION.SDK_INT, liveRadio?.frequencyMHz, configuration.channel, requestedChannel,
+                realSdkInt(), liveRadio?.frequencyMHz, configuration.channel, requestedChannel,
             )
             if (liveRadio == null && configuration.channel == 0) {
                 onDiagnostic("LocalOnlyHotspot: advertising channel $advertisedChannel (band ${configuration.bandLabel}) without live verification")
@@ -248,11 +249,11 @@ class LocalOnlyHotspotManager(context: Context, private val onDiagnostic: (Strin
                         return LocalOnlyHotspotRadioInfo.Radio(ap.bssid ?: configuration.bssid, settled)
                     }
                     if (System.nanoTime() - legacyStart >= TimeUnit.MILLISECONDS.toNanos(
-                            if (LocalHotspotRadioPolicy.supportsSystemBand(Build.VERSION.SDK_INT) ||
+                            if (LocalHotspotRadioPolicy.supportsSystemBand(realSdkInt()) ||
                                 configuration.bandLabel == "5 GHz") 1500 else 6000
                         )
                     ) {
-                        if (LocalHotspotRadioPolicy.supportsSystemBand(Build.VERSION.SDK_INT)) {
+                        if (LocalHotspotRadioPolicy.supportsSystemBand(realSdkInt())) {
                             onDiagnostic("LocalOnlyHotspot: legacy system AP ready; channel unreadable, advertising automatic channel 0")
                             return null
                         }
@@ -568,7 +569,7 @@ class LocalOnlyHotspotManager(context: Context, private val onDiagnostic: (Strin
                 networkInterface.hotspotAddress()?.let { hostAddress ->
                     val interfaceBssid = networkInterface.interfaceBssid()
                     if (bssid == null && interfaceBssid == null &&
-                        !LocalHotspotRadioPolicy.supportsSystemBand(Build.VERSION.SDK_INT)) {
+                        !LocalHotspotRadioPolicy.supportsSystemBand(realSdkInt())) {
                         return@let
                     }
                     return ApInterface(

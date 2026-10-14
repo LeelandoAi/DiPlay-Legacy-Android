@@ -1,4 +1,4 @@
-import com.android.build.gradle.internal.tasks.L8DexDesugarLibTask
+﻿import com.android.build.gradle.internal.tasks.L8DexDesugarLibTask
 import java.security.KeyStore
 import java.security.MessageDigest
 import org.gradle.api.DefaultTask
@@ -28,13 +28,13 @@ android {
 
     defaultConfig {
         applicationId = "com.shihab.diplay"
-        minSdk = 19
+        minSdk = 17
         targetSdk = 37
         multiDexEnabled = true
         multiDexKeepProguard = file("multidex-config.pro")
         testInstrumentationRunner = "com.shilapi.xcertplay.T3LegacyInstrumentation"
-        versionCode = 66
-        versionName = "0.2.46"
+        versionCode = 78
+        versionName = "0.2.58"
 
     }
 

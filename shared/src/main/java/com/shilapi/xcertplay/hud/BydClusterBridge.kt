@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
+import com.shilapi.xcertplay.compat.realSdkInt
 import android.util.Log
 import com.shilapi.xcertplay.iap2.wire.Iap2Frame
 import java.util.concurrent.Executors
@@ -182,7 +183,7 @@ internal object BydClusterBridge {
 
     private fun projectionDisplayPresent(appContext: Context): Boolean {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.JELLY_BEAN_MR1) return false
-        val displayManager = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+        val displayManager = if (realSdkInt() >= Build.VERSION_CODES.M) {
             appContext.getSystemService(android.hardware.display.DisplayManager::class.java)
         } else {
             @Suppress("DEPRECATION")

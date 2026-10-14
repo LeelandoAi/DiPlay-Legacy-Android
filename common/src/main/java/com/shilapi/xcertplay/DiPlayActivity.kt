@@ -25,6 +25,7 @@ import android.media.AudioFormat
 import android.media.AudioTrack
 import android.net.Uri
 import android.os.Build
+import com.shilapi.xcertplay.compat.realSdkInt
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -38,7 +39,7 @@ import android.widget.*
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.core.view.doOnLayout
+import android.view.ViewTreeObserver
 import androidx.appcompat.content.res.AppCompatResources
 import androidx.core.graphics.drawable.DrawableCompat
 import androidx.core.view.WindowCompat
@@ -292,7 +293,7 @@ class DiPlayActivity : ComponentActivity() {
         com.shilapi.xcertplay.hud.BydNavigationOutputs.onAppOpened(applicationContext)
         WheelKeyService.restoreIfNeeded(this)
         WindowCompat.setDecorFitsSystemWindows(window, true)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+        if (realSdkInt() >= Build.VERSION_CODES.LOLLIPOP) {
             window.statusBarColor = BG
             window.navigationBarColor = BG
         }
@@ -536,7 +537,7 @@ class DiPlayActivity : ComponentActivity() {
         // A stopped window still dispatches pre-draw but skips layout, so wait for a real layout;
         // the listener stays on this view and goes away with it.
         previousScrollY?.let { y ->
-            scroll.doOnLayout {
+            scroll.afterLegacyLayout {
                 if (rootScroll === scroll) {
                     scroll.scrollTo(0, y)
                     pendingScrollY = null
@@ -546,8 +547,8 @@ class DiPlayActivity : ComponentActivity() {
         val rail = settingsRailScroll
         pendingRailScrollY = previousRailScrollY.takeIf { rail != null }
         pendingRailFocus = restoreRailFocus && rail != null
-        rail?.doOnLayout {
-            if (settingsRailScroll !== rail) return@doOnLayout
+        rail?.afterLegacyLayout {
+            if (settingsRailScroll !== rail) return@afterLegacyLayout
             previousRailScrollY?.let { rail.scrollTo(0, it) }
             val destinations = rail.getChildAt(0) as ViewGroup
             val selected = (0 until destinations.childCount)
@@ -654,13 +655,13 @@ class DiPlayActivity : ComponentActivity() {
         val body = column()
         val left = column()
         left.addView(label(getString(R.string.your_phone_your_drive), 12, ACCENT, true).apply {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) letterSpacing = .16f
+            if (realSdkInt() >= Build.VERSION_CODES.LOLLIPOP) letterSpacing = .16f
         })
         left.addView(label(getString(R.string.a_familiar_drive), if (wide) 42 else 36, TEXT, true).apply { setPadding(0, dp(12), 0, dp(10)) })
         left.addView(label(getString(R.string.your_maps_music_and_conversations_carplay_right_here_on_yo), 19, MUTED))
         val card = card()
         card.addView(label(getString(R.string.wireless_carplay), 12, ACCENT, true).apply {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) letterSpacing = .12f
+            if (realSdkInt() >= Build.VERSION_CODES.LOLLIPOP) letterSpacing = .12f
         })
         status = label(getString(R.string.ready_when_you_are), 24, TEXT, true).apply { setPadding(0, dp(10), 0, dp(16)) }
         card.addView(status)
@@ -709,7 +710,7 @@ class DiPlayActivity : ComponentActivity() {
         right.addView(button(getString(R.string.settings), false) { page = "settings"; render() }, matchButton())
         right.addView(label(getString(R.string.make_diplay_feel_right_for_your_car), 14, MUTED).apply { gravity = Gravity.CENTER; setPadding(0, dp(10), 0, dp(24)) })
         right.addView(label("${getString(R.string.home_public_preview)}${version()}", 12, MUTED).apply {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) letterSpacing = .08f
+            if (realSdkInt() >= Build.VERSION_CODES.LOLLIPOP) letterSpacing = .08f
         })
         if (wide) {
             // Both rows share column widths. The USB button starts at the wireless
@@ -773,7 +774,7 @@ class DiPlayActivity : ComponentActivity() {
             isClickable = true
             isFocusable = true
             isSelected = selected
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) foreground = focusRing(12)
+            if (realSdkInt() >= Build.VERSION_CODES.M) foreground = focusRing(12)
             contentDescription = getString(R.string.settings_open_category, title)
             background = compatibleRipple(
                 ColorStateList.valueOf(RIPPLE),
@@ -973,7 +974,7 @@ class DiPlayActivity : ComponentActivity() {
         isClickable = true
         isFocusable = true
         contentDescription = getString(R.string.settings_open_category, settingsCategoryTitle(category))
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+        if (realSdkInt() >= Build.VERSION_CODES.M) {
             foreground = android.graphics.drawable.LayerDrawable(arrayOf<android.graphics.drawable.Drawable>(
                 android.graphics.drawable.RippleDrawable(ColorStateList.valueOf(RIPPLE), null, null), focusRing(12)))
         }
@@ -1024,7 +1025,7 @@ class DiPlayActivity : ComponentActivity() {
         setPadding(dp(16), dp(10), dp(16), dp(10))
         isClickable = true
         isFocusable = true
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+        if (realSdkInt() >= Build.VERSION_CODES.M) {
             foreground = android.graphics.drawable.LayerDrawable(arrayOf<android.graphics.drawable.Drawable>(
                 android.graphics.drawable.RippleDrawable(ColorStateList.valueOf(RIPPLE), null, null), focusRing(12)))
         }
@@ -1142,7 +1143,7 @@ class DiPlayActivity : ComponentActivity() {
             it.text.toString() == result.title || it.text.startsWith(result.title + VALUE_SEPARATOR)
         } ?: return
         val target = generateSequence<View>(match) { it.parent as? View }.firstOrNull { it.isClickable } ?: match
-        scroll.doOnLayout {
+        scroll.afterLegacyLayout {
             var top = 0
             var view: View? = target
             while (view != null && view !== scroll) { top += view.top; view = view.parent as? View }
@@ -1153,6 +1154,18 @@ class DiPlayActivity : ComponentActivity() {
         }
     }
 
+    // AndroidX doOnLayout uses View.isLaidOut (API 19) on its fast path. On API 17,
+    // defer to the platform layout observer instead, avoiding NoSuchMethodError.
+    private fun View.afterLegacyLayout(action: () -> Unit) {
+        val observer = viewTreeObserver
+        if (!observer.isAlive) return
+        observer.addOnGlobalLayoutListener(object : ViewTreeObserver.OnGlobalLayoutListener {
+            override fun onGlobalLayout() {
+                if (observer.isAlive) observer.removeGlobalOnLayoutListener(this)
+                action()
+            }
+        })
+    }
     private fun descendants(view: View): Sequence<View> = sequence {
         yield(view)
         if (view is ViewGroup) for (i in 0 until view.childCount) yieldAll(descendants(view.getChildAt(i)))
@@ -1541,6 +1554,15 @@ class DiPlayActivity : ComponentActivity() {
                 else getString(R.string.shows_the_iphone_s_cluster_map_virtual_stream_description),
                 clusterMapEnabled) {
                 AirPlayPersistence.saveClusterMapEnabled(this, it)
+                render()
+            }
+            // Issue #119: 悬浮小白点，点击打开 DiPlay（部分车机无法添加桌面快捷方式）
+            toggle(card, getString(R.string.floating_dot),
+                getString(R.string.floating_dot_description),
+                AirPlayPersistence.loadFloatingDot(this)) {
+                AirPlayPersistence.saveFloatingDot(this, it)
+                if (it && !FloatingDotOverlay.permitted(this)) openOverlayPermission()
+                else FloatingDotOverlay.setEnabled(this, it)
                 render()
             }
             if (clusterMapEnabled) {
@@ -2205,7 +2227,11 @@ class DiPlayActivity : ComponentActivity() {
             }
         })
         val error = label("", 14, WARNING)
-        error.accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
+        // View.setAccessibilityLiveRegion is API 19+; on real API 17 (e.g. 4.2.2 head units)
+        // the call below would throw NoSuchMethodError and crash the settings dialog.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+            error.accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
+        }
         fields.addView(error)
         val dialog = AlertDialog.Builder(this).setTitle(getString(if (existingWifi) R.string.existing_wifi_details else R.string.car_hotspot_details))
             .setView(ScrollView(this).apply { addView(fields) })
@@ -2292,7 +2318,7 @@ class DiPlayActivity : ComponentActivity() {
             setPadding(0, dp(16), 0, dp(16))
         })
         body.addView(button(getString(R.string.copy_command), false) {
-            val clipboard = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val clipboard = if (realSdkInt() >= Build.VERSION_CODES.M) {
                 getSystemService(android.content.ClipboardManager::class.java)
             } else {
                 @Suppress("DEPRECATION")
@@ -2435,7 +2461,7 @@ class DiPlayActivity : ComponentActivity() {
             setBackgroundColor(0x22FFFFFF)
         })
         body.addView(button(getString(R.string.copy_command), false) {
-            val clipboard = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val clipboard = if (realSdkInt() >= Build.VERSION_CODES.M) {
                 getSystemService(android.content.ClipboardManager::class.java)
             } else {
                 @Suppress("DEPRECATION")
@@ -3731,7 +3757,7 @@ class DiPlayActivity : ComponentActivity() {
             setImageBitmap(custom ?: BitmapFactory.decodeResource(resources, R.raw.ic_car_home))
             scaleType = ImageView.ScaleType.CENTER_CROP
             background = rounded(SURFACE, BORDER)
-            if (Build.VERSION.SDK_INT >= 21) clipToOutline = true
+            if (realSdkInt() >= 21) clipToOutline = true
             importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
         }, LinearLayout.LayoutParams(dp(72), dp(72)).apply { marginEnd = dp(16) })
         val text = column()
@@ -4151,7 +4177,7 @@ class DiPlayActivity : ComponentActivity() {
     }
 
     private fun closeP2pChannel(channel: android.net.wifi.p2p.WifiP2pManager.Channel) {
-        if (Build.VERSION.SDK_INT >= 27) channel.close()
+        if (realSdkInt() >= 27) channel.close()
     }
 
     private fun refreshStatus() {
@@ -4199,7 +4225,7 @@ class DiPlayActivity : ComponentActivity() {
         // Some head units omit or disable DocumentsUI. Launch itself can throw, before
         // the result callback and the background writer's exception handler ever run.
         if (exportInProgress) return
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) {
+        if (realSdkInt() < Build.VERSION_CODES.LOLLIPOP) {
             // Use our own USB volume picker: KitKat DocumentsUI often hides vendor mounts.
             val choices = DiagnosticExportStore.availableUsbVolumes(applicationContext)
             if (choices.isEmpty()) {
@@ -4229,6 +4255,7 @@ class DiPlayActivity : ComponentActivity() {
         val requestedRoot = preferredReportRoot
         preferredReportRoot = null
         Thread({
+            var builtReport: String? = null
             val result = runCatching {
                 val report = buildString {
                     appendLine("DiPlay ${version()} · private beta diagnostic report")
@@ -4302,6 +4329,7 @@ class DiPlayActivity : ComponentActivity() {
                         }
                     }
                 }
+                builtReport = report
                 val savedReport = if (uri != null) {
                     DiagnosticExportStore.write(appContext.contentResolver, uri, report)
                     DiagnosticExportStore.SavedReport(uri)
@@ -4334,9 +4362,17 @@ class DiPlayActivity : ComponentActivity() {
                             }.onFailure { showDiagnosticReport(report) }
                         }.show()
                 } else {
+                    val failedReport = builtReport
                     AlertDialog.Builder(this).setTitle(getString(R.string.could_not_save_the_report))
                         .setMessage(getString(R.string.check_that_storage_is_available_or_choose_another_save_loc))
                         .setPositiveButton(getString(R.string.choose_location)) { _, _ -> chooseReportDestination() }
+                        .apply {
+                            if (failedReport != null) {
+                                setNeutralButton(getString(R.string.view_diagnostic_report)) { _, _ ->
+                                    showDiagnosticReport(failedReport)
+                                }
+                            }
+                        }
                         .setNegativeButton(getString(R.string.close), null).show()
                 }
             }
@@ -4355,10 +4391,23 @@ class DiPlayActivity : ComponentActivity() {
         }
         val body = column().apply { setPadding(dp(24), dp(12), dp(24), dp(12)) }
         body.addView(label(getString(R.string.diagnostic_report_copy_hint), 14, MUTED))
+        body.addView(button(getString(R.string.copy_all), false) {
+            // Long-press text selection (setTextIsSelectable) crashes on some API 17/19 head
+            // units when the selection ActionMode starts, so copy via an explicit button
+            // instead of relying on the selection machinery.
+            val clipboard = if (realSdkInt() >= Build.VERSION_CODES.M) {
+                getSystemService(android.content.ClipboardManager::class.java)
+            } else {
+                @Suppress("DEPRECATION")
+                getSystemService(Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+            }
+            clipboard?.setPrimaryClip(
+                android.content.ClipData.newPlainText(getString(R.string.view_diagnostic_report), report))
+            toast(getString(R.string.diagnostic_report_copied))
+        })
         try {
             body.addView(label(preview, 13, TEXT).apply {
                 typeface = Typeface.MONOSPACE
-                setTextIsSelectable(true)
             })
         } catch (error: Throwable) {
             // Even the preview can blow the layout budget on very weak devices; fall back to
@@ -4443,7 +4492,7 @@ class DiPlayActivity : ComponentActivity() {
                 isAllCaps = false
                 textSize = 16f
                 minHeight = dp(48)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) stateListAnimator = null
+                if (realSdkInt() >= Build.VERSION_CODES.LOLLIPOP) stateListAnimator = null
                 setOnClickListener {
                     val previous = navigationStreamType
                     navigationStreamType = i
@@ -4592,9 +4641,9 @@ class DiPlayActivity : ComponentActivity() {
         typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
         background = compatibleRipple(ColorStateList.valueOf(RIPPLE), rounded(if (primary) ACCENT else BUTTON, if (primary) ACCENT else BORDER), null)
         setPadding(dp(16), 0, dp(16), 0); minHeight = dp(56)
-        if (Build.VERSION.SDK_INT >= 21) stateListAnimator = null
+        if (realSdkInt() >= 21) stateListAnimator = null
         compoundDrawablePadding = dp(12)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) foreground = focusRing()
+        if (realSdkInt() >= Build.VERSION_CODES.M) foreground = focusRing()
         text = title
         searchIndexSink?.add(title.substringBefore(VALUE_SEPARATOR))
         setOnClickListener { click() }

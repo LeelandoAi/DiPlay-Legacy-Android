@@ -5,6 +5,7 @@ import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
 import android.net.wifi.WifiManager
 import android.os.Build
+import com.shilapi.xcertplay.compat.realSdkInt
 import android.util.Log
 import com.shilapi.xcertplay.airplay.AirPlayConfig
 import com.shilapi.xcertplay.airplay.AirPlayIdentity
@@ -179,6 +180,13 @@ class CarPlayBonjour(
     private val localAdvertisedAddress = advertisedHostAddress()
     private val advertisedAddresses = (listOfNotNull(localAdvertisedAddress) + additionalAddresses).distinct()
     @Volatile private var publishedFamilies = "none"
+    /**
+     * Issue #156: some 4.4.x head units cannot bind bundled mDNS on any advertised
+     * address (port 5353 unavailable to the app). When the interface path yields zero
+     * bindings, fall back to system NSD — the pre-bundled-mDNS behavior — instead of
+     * failing wireless bring-up outright.
+     */
+    @Volatile private var interfaceMdnsActive = useInterfaceMdns
     private val addedCount = AtomicInteger()
     private val resolvedCount = AtomicInteger()
     private val addressMismatchCount = AtomicInteger()
@@ -195,7 +203,7 @@ class CarPlayBonjour(
     private val multicastLock = ((context.applicationContext ?: context).let { ctx ->
         (ctx.getSystemService(Context.WIFI_SERVICE) as? WifiManager)
             ?: runCatching {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) ctx.getSystemService(WifiManager::class.java) else null
+                if (realSdkInt() >= Build.VERSION_CODES.M) ctx.getSystemService(WifiManager::class.java) else null
             }.getOrNull()
     })?.createMulticastLock("carplay-bonjour")?.apply { setReferenceCounted(false) }
 
@@ -335,10 +343,21 @@ class CarPlayBonjour(
                         boundFamilies += if (address is Inet4Address) "IPv4" else "IPv6"
                     }
                     if (boundFamilies.isEmpty()) {
-                        throw IOException("Interface mDNS could not bind on any advertised address")
+                        // Issue #156: bundled mDNS cannot bind anywhere on this unit
+                        // (port 5353 unavailable to the app). Fall back to system NSD
+                        // instead of failing wireless bring-up outright.
+                        Log.w(
+                            TAG,
+                            "interface mDNS could not bind on any advertised address; " +
+                                "falling back to system NSD",
+                        )
+                        interfaceMdnsActive = false
+                        publishedFamilies = "nsd-fallback"
+                    } else {
+                        publishedFamilies = boundFamilies.joinToString(",")
                     }
-                    publishedFamilies = boundFamilies.joinToString(",")
-                } else {
+                }
+                if (!interfaceMdnsActive) {
                     registerAirPlay()
                     registrationRequested = true
                     if (!registrationLatch.await(NSD_REGISTRATION_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)) {
@@ -417,7 +436,7 @@ class CarPlayBonjour(
             serviceName = config.deviceName
             serviceType = AIRPLAY_SERVICE_TYPE
             port = config.port
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            if (realSdkInt() >= Build.VERSION_CODES.LOLLIPOP) {
                 CarPlayBonjourProtocol.airPlayTxtRecords(config, identity).forEach { (key, value) ->
                     setAttribute(key, value)
                 }
@@ -449,7 +468,7 @@ class CarPlayBonjour(
 
     private fun runWorker() {
         while (!closed) {
-            if (useInterfaceMdns) {
+            if (interfaceMdnsActive) {
                 try {
                     while (true) emit(discoveryEvents.poll() ?: break)
                     val (endpoint, address) = interfaceServices.poll(
@@ -487,7 +506,7 @@ class CarPlayBonjour(
         if (port !in 1..65535) return
         val serviceName = resolved.serviceName ?: service.serviceName ?: return
         val host = address.hostAddress ?: return
-        val bluetoothId = (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) resolved.attributes else null)
+        val bluetoothId = (if (realSdkInt() >= Build.VERSION_CODES.LOLLIPOP) resolved.attributes else null)
             ?.get("id")
             ?.let(::decodeTxtValue)
             ?.takeIf { it.isNotBlank() }

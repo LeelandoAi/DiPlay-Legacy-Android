@@ -7,6 +7,7 @@ import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothHeadset
 import android.bluetooth.BluetoothProfile
 import com.shilapi.xcertplay.compat.BluetoothCompat
+import com.shilapi.xcertplay.compat.realSdkInt
 import com.shilapi.xcertplay.media.musicVolumeWarning
 import com.shilapi.xcertplay.bluetooth.BluetoothAddressResolver
 import com.shilapi.xcertplay.bluetooth.CarPlayBluetoothManager
@@ -187,7 +188,7 @@ class CarPlayController(
     private val appContext = context.applicationContext
     private val diagnosticAttempt = diagnosticAttempts.incrementAndGet()
     private val diagnosticRun = AtomicInteger()
-    private val usbManager: UsbManager? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+    private val usbManager: UsbManager? = if (realSdkInt() >= Build.VERSION_CODES.M) {
         context.getSystemService(UsbManager::class.java)
     } else {
         @Suppress("DEPRECATION")
@@ -271,7 +272,7 @@ class CarPlayController(
     private val wiredTcpArrived = AtomicBoolean(false)
     private val startupTimer = java.util.concurrent.ScheduledThreadPoolExecutor(1) { task ->
         Thread(task, "diplay-first-tcp-timeout").apply { isDaemon = true }
-    }.apply { if (Build.VERSION.SDK_INT >= 21) removeOnCancelPolicy = true }
+    }.apply { if (realSdkInt() >= 21) removeOnCancelPolicy = true }
     @Volatile private var wirelessDiagnostics: WirelessStartupDiagnostics? = null
     @Volatile private var bluetoothSocket: BluetoothSocket? = null
     @Volatile private var bluetoothStream: BlockingDuplexByteStream? = null
@@ -816,7 +817,7 @@ class CarPlayController(
         availabilityPollGeneration.incrementAndGet()
         phase = Phase.MFI
         onStatus(CarPlayStatus.DiscoveringMfi)
-        val privateRoot = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) appContext.noBackupFilesDir else appContext.filesDir
+        val privateRoot = if (realSdkInt() >= Build.VERSION_CODES.LOLLIPOP) appContext.noBackupFilesDir else appContext.filesDir
         val offlineDirectory = java.io.File(privateRoot, LocalMfiAuthenticationClient.DIRECTORY)
         when (config.mfiTarget) {
             MfiTarget.LOCAL -> openLocalMfi(offlineDirectory)
@@ -1183,8 +1184,12 @@ class CarPlayController(
             // Issue #79: without a Bluetooth adapter, wireless CarPlay is impossible —
             // iPhone needs Bluetooth for discovery/pairing. Fail fast instead of waiting
             // 60s for a Wi-Fi connection that will never come.
-            val btAdapter = BluetoothAdapter.getDefaultAdapter()
-            if (btAdapter == null) {
+            // Issue #138: gate on the hybrid adapter (vendor service + standard Android),
+            // not the raw Android adapter alone — on some head units (e.g. ECARX E01)
+            // Bluetooth only works through the vendor Bluetooth service while
+            // getDefaultAdapter() reports null or disabled.
+            val hybridBt = CarPlayBluetoothManager.get(appContext)
+            if (!hybridBt.isSupported()) {
                 throw IOException(
                     "No Bluetooth adapter on this head unit; wireless CarPlay requires Bluetooth " +
                         "for iPhone discovery. Use wired USB instead."
@@ -1193,7 +1198,7 @@ class CarPlayController(
             // Issue #117: adapter present but switched off — the iPhone can never discover
             // the head unit, so fail fast with an actionable message instead of the 60s
             // Wi-Fi wait ending in "Timed out waiting for iPhone to connect over Wi-Fi hotspot".
-            if (!btAdapter.isEnabled) {
+            if (!hybridBt.isEnabled()) {
                 throw IOException(
                     "Bluetooth is turned off on this head unit; wireless CarPlay requires Bluetooth " +
                         "for iPhone discovery. Turn on Bluetooth in the head unit system settings " +
@@ -1400,9 +1405,19 @@ class CarPlayController(
                 // or IPv6 while the listener/probe was bound to the AP's IPv4 address.
                 // Some KitKat head units have no working servicediscovery system service.
                 // Use bundled JmDNS instead of crashing in NsdManager.getMessenger().
-                useInterfaceMdns = com.shilapi.xcertplay.network.useBundledCarPlayMdns(Build.VERSION.SDK_INT),
+                useInterfaceMdns = com.shilapi.xcertplay.network.useBundledCarPlayMdns(realSdkInt()),
                 onEvent = { event -> debugLog("wireless bonjour: ${event.diagnosticSummary()}") },
-                additionalAddresses = hotspotInfo.hostAddresses.filter { it != hostAddress },
+                // Ported from dagou888/DiPlay-UIS8141E@9741cac: some Android 8.1
+                // head units are much more reliable when the Personal Hotspot session
+                // stays on one IPv4 interface; don't let JmDNS create an IPv6
+                // responder on a second address family during the CarPlay handoff.
+                additionalAddresses = hotspotInfo.hostAddresses.filter {
+                    it != hostAddress && (
+                        realSdkInt() > Build.VERSION_CODES.P ||
+                            hotspotInfo.backend != WirelessHotspotBackend.EXISTING_WIFI ||
+                            it is java.net.Inet4Address
+                        )
+                },
             )
             synchronized(wirelessResourceLock) {
                 if (isStaleWirelessRun(generation)) return
@@ -1915,7 +1930,7 @@ class CarPlayController(
                     permissionPollGeneration++
                     when (phase) {
                         Phase.REENUMERATION, Phase.IPHONE -> {
-                            if (Build.VERSION.SDK_INT < 21) {
+                            if (realSdkInt() < 21) {
                                 val attempts = reenumerationAttempts
                                 val permissionGeneration = permissionPollGeneration
                                 iphoneHost.inspectCarPlayConfigurationAsync(result.device, executor) { configuration ->
@@ -2163,7 +2178,7 @@ class CarPlayController(
             function = function,
             expectedConfiguration = configuration.id,
             vendorId = device.vendorId,
-            useAsyncRead = Build.VERSION.SDK_INT >= ASYNC_USB_READ_MIN_SDK,
+            useAsyncRead = realSdkInt() >= ASYNC_USB_READ_MIN_SDK,
             onDiagnostic = ::connectionDiagnostic,
         )
     }
@@ -2347,8 +2362,14 @@ class CarPlayController(
                         CarPlayStatus.Failed("Wired CarPlay peer silent; resetting link")
                     // Issue #95: iPhone alive on iAP2 but never opened the AirPlay TCP
                     // connection — fail fast instead of idling until USB wedges.
-                    Iap2WiredControlTerminal.NO_AIRPLAY_TCP ->
+                    // Issue #155/#123: capture the kernel TCP-table snapshot here so the
+                    // report shows whether injected SYNs ever reached the TCP stack.
+                    Iap2WiredControlTerminal.NO_AIRPLAY_TCP -> {
+                        vpnService?.let { service ->
+                            debugLog("wired ${service.tunTcpSnapshot()}")
+                        }
                         CarPlayStatus.Failed("No AirPlay TCP after CarPlay StartSession; resetting link")
+                    }
                 },
             )
         } catch (error: Throwable) {
@@ -2419,11 +2440,11 @@ class CarPlayController(
         }
         val manager: WirelessHotspotManager = when (hotspotMode) {
             WirelessHotspotMode.WIFI_P2P -> {
-                check(Build.VERSION.SDK_INT >= 28)
+                check(realSdkInt() >= 28)
                 WifiP2pGroupManager(appContext, ::debugLog, preferredChannel = config.wifiP2pPreferredChannel)
             }
             WirelessHotspotMode.LOCAL_ONLY_HOTSPOT -> {
-                check(Build.VERSION.SDK_INT >= 26) { "Local hotspot requires Android 8; choose Wi-Fi Direct or Car hotspot" }
+                check(realSdkInt() >= 26) { "Local hotspot requires Android 8; choose Wi-Fi Direct or Car hotspot" }
                 LocalOnlyHotspotManager(appContext, ::debugLog)
             }
             WirelessHotspotMode.EXISTING_WIFI -> ExistingWifiManager(
@@ -2481,7 +2502,7 @@ class CarPlayController(
             if (hotspot === primary) hotspot = null
             closeBestEffort("legacy-wifi-p2p") { primary?.close() }
             if (isStaleWirelessRun(generation)) throw primaryFailure
-            if (Build.VERSION.SDK_INT < 26) throw IOException(
+            if (realSdkInt() < 26) throw IOException(
                 "Wi-Fi Direct could not start on Android 7; use the car hotspot: ${primaryFailure.message}", primaryFailure,
             )
             debugLog(
@@ -2819,6 +2840,12 @@ class CarPlayController(
         return when (result) {
             is CarPlayVpnService.AttachResult.Started -> {
                 debugLog("wired VPN/NCM transport attach result=started")
+                null
+            }
+            CarPlayVpnService.AttachResult.Reused -> {
+                // TUN reused, NCM bridge swapped. The old NCM is closed by the
+                // service when the bridge was swapped; do not close the new one.
+                debugLog("wired VPN/NCM transport attach result=reused (TUN kept, fwmark preserved)")
                 null
             }
             CarPlayVpnService.AttachResult.AlreadyStarted -> {

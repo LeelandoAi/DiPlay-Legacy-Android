@@ -35,7 +35,7 @@ jobs:
           TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.event.release.tag_name }}
         run: |
           mkdir -p release-apk
-          gh release download "$TAG" --repo "$REPOSITORY" --pattern '*.apk' --dir release-apk
+          gh release download "$TAG" --repo "$REPOSITORY" --pattern "DiPlay-v*.apk" --dir release-apk
           count=$(find release-apk -maxdepth 1 -type f -name '*.apk' | wc -l)
           if [ "$count" -ne 1 ]; then
             echo "::error::Expected exactly one release APK, got $count"
@@ -55,3 +55,5 @@ jobs:
             exit 1
           fi
           echo "Release certificate matches v0.2.21."
+
+

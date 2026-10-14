@@ -116,9 +116,11 @@ internal class StreamReceiveStats(
 
     private fun decryptSummary(): String {
         if (decryptSamples == 0) return ""
-        val mbPerSecond = if (decryptSumNs == 0L) 0L else decryptBytes * 1_000L / decryptSumNs
+        // Tenths of MB/s: integer MB/s truncated anything below 1 MB/s to 0, exactly
+        // when the throughput mattered most for diagnosing slow decryption.
+        val tenths = if (decryptSumNs == 0L) 0L else decryptBytes * 10_000L / decryptSumNs
         return " decryptAvgUs=${decryptSumNs / decryptSamples / 1000} decryptMaxUs=${maxDecryptNs / 1000} " +
-            "decryptMBps=$mbPerSecond"
+            "decryptMBps=${tenths / 10}.${tenths % 10}"
     }
 
     private companion object { const val LONG_READ_NS = 250_000_000L }

@@ -6,9 +6,10 @@ import android.graphics.drawable.Drawable
 import android.graphics.drawable.RippleDrawable
 import android.graphics.drawable.StateListDrawable
 import android.os.Build
+import com.shilapi.xcertplay.compat.realSdkInt
 
 internal fun compatibleRipple(colors: ColorStateList, content: Drawable?, mask: Drawable?): Drawable =
-    if (Build.VERSION.SDK_INT >= 21) RippleDrawable(colors, content, mask)
+    if (realSdkInt() >= 21) RippleDrawable(colors, content, mask)
     else StateListDrawable().apply {
         addState(intArrayOf(android.R.attr.state_pressed), ColorDrawable(colors.defaultColor))
         addState(intArrayOf(android.R.attr.state_focused), ColorDrawable(colors.defaultColor))

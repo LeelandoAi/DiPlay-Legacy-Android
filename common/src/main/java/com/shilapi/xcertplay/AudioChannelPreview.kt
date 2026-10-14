@@ -7,6 +7,7 @@ import android.media.AudioTrack
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import com.shilapi.xcertplay.compat.realSdkInt
 import java.io.Closeable
 import java.util.concurrent.Executors
 import java.util.concurrent.Future
@@ -41,7 +42,7 @@ internal class AudioChannelPreview(private val onUnavailable: (Int) -> Unit) : C
                 )
                 check(minimum > 0) { "No PCM output buffer is available" }
                 val bufferBytes = maxOf(minimum, SAMPLE_RATE / 10 * 2)
-                val built = if (channel == 0 && android.os.Build.VERSION.SDK_INT >= 23) {
+                val built = if (channel == 0 && realSdkInt() >= 23) {
                     AudioTrack.Builder()
                         .setAudioAttributes(
                             AudioAttributes.Builder()
@@ -71,11 +72,11 @@ internal class AudioChannelPreview(private val onUnavailable: (Int) -> Unit) : C
                 check(built.state == AudioTrack.STATE_INITIALIZED) { "Audio output did not initialize" }
                 if (closed || generation.get() != request) return@submit
                 activeTrack.set(built)
-                if (android.os.Build.VERSION.SDK_INT >= 21) built.setVolume(0.6f) else built.setStereoVolume(0.6f, 0.6f)
+                if (realSdkInt() >= 21) built.setVolume(0.6f) else built.setStereoVolume(0.6f, 0.6f)
                 built.play()
                 var written = 0
                 while (written < pcm.size && !closed && generation.get() == request) {
-                    val count = if (android.os.Build.VERSION.SDK_INT >= 23) built.write(
+                    val count = if (realSdkInt() >= 23) built.write(
                         pcm, written, minOf(4096, pcm.size - written), AudioTrack.WRITE_BLOCKING,
                     ) else built.write(pcm, written, minOf(4096, pcm.size - written))
                     check(count > 0) { "Could not write preview tone" }

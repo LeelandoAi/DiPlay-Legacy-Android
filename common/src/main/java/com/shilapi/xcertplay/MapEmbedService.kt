@@ -8,6 +8,7 @@ import android.graphics.Matrix
 import android.graphics.SurfaceTexture
 import android.hardware.display.DisplayManager
 import android.os.Build
+import com.shilapi.xcertplay.compat.realSdkInt
 import android.os.Bundle
 import android.os.Handler
 import android.os.IBinder
@@ -97,8 +98,8 @@ class MapEmbedService : Service() {
             return
         }
         embeds.remove(client.binder)?.release()
-        val displayManager = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+        val displayManager = if (realSdkInt() >= Build.VERSION_CODES.JELLY_BEAN_MR1) {
+            if (realSdkInt() >= Build.VERSION_CODES.M) {
                 getSystemService(DisplayManager::class.java)
             } else {
                 @Suppress("DEPRECATION")

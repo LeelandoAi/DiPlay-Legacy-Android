@@ -23,7 +23,7 @@ internal object DiPlayApkInstaller {
 
     /** A malformed SDK_INT on an old head unit must not select a legacy file URI on Android 7+. */
     internal fun supportsFileInstall(sdk: Int, release: String): Boolean =
-        sdk in 19..23
+        sdk in 17..23
 
     internal fun contentIntents(uri: Uri): List<Intent> = listOf(
         Intent(Intent.ACTION_VIEW).apply {
@@ -49,18 +49,33 @@ internal object DiPlayApkInstaller {
      * Copy the verified update to an old Android user's Downloads folder.
      * A unique filename avoids replacing or following an existing shared-storage file.
      * The destination digest must match the source, and the caller validates its APK signature.
+     *
+     * Head units often report external storage as unmounted or lack a public
+     * Downloads directory; fall back to app-specific external dirs, which are
+     * still world-readable on these API levels and need no storage permission.
      */
     fun createPublicCopy(context: Context, verifiedApk: File, verify: (File) -> Unit): File? {
         if (!supportsFileInstall(Build.VERSION.SDK_INT, Build.VERSION.RELEASE.orEmpty()) &&
             !Build.VERSION.RELEASE.orEmpty().startsWith("4.") &&
             !Build.VERSION.RELEASE.orEmpty().startsWith("5.")) return null
-        if (Environment.getExternalStorageState() != Environment.MEDIA_MOUNTED) return null
-        val downloads = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-        if (!downloads.isDirectory && !downloads.mkdirs()) return null
+        val candidates = listOfNotNull(
+            runCatching { Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS) }.getOrNull(),
+            runCatching { context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) }.getOrNull(),
+            runCatching { context.externalCacheDir }.getOrNull(),
+        )
+        for (destination in candidates) {
+            val copy = tryCreateCopy(verifiedApk, verify, destination) ?: continue
+            return copy
+        }
+        return null
+    }
+
+    private fun tryCreateCopy(verifiedApk: File, verify: (File) -> Unit, directory: File): File? {
+        if (!directory.isDirectory && !directory.mkdirs()) return null
         val name = verifiedApk.name.removeSuffix(".apk").take(90).ifBlank { "DiPlay-update" }
         var destination: File? = null
         try {
-            val target = File.createTempFile("$name-", ".apk", downloads)
+            val target = File.createTempFile("$name-", ".apk", directory)
             destination = target
             val sourceDigest = MessageDigest.getInstance("SHA-256")
             val copyDigest = MessageDigest.getInstance("SHA-256")

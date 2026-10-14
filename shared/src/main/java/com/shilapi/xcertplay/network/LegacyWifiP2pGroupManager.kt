@@ -8,6 +8,7 @@ import android.net.wifi.p2p.WifiP2pGroup
 import android.net.wifi.p2p.WifiP2pInfo
 import android.net.wifi.p2p.WifiP2pManager
 import android.os.Build
+import com.shilapi.xcertplay.compat.realSdkInt
 import android.os.HandlerThread
 import android.os.Looper
 import android.os.SystemClock
@@ -204,7 +205,7 @@ internal class LegacyWifiP2pGroupManager(
 
     private fun checkPrerequisites() {
         if (
-            Build.VERSION.SDK_INT >= 23 && appContext.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) !=
+            realSdkInt() >= 23 && appContext.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) !=
             PackageManager.PERMISSION_GRANTED
         ) {
             throw IOException("Allow precise Location for DiPlay before using Wi-Fi Direct")

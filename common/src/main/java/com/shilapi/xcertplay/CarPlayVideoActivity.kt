@@ -39,6 +39,7 @@ import androidx.media3.exoplayer.hls.HlsManifest
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.PlayerView
 import com.shilapi.xcertplay.airplay.VideoInCar
+import com.shilapi.xcertplay.compat.realSdkInt
 import com.shilapi.xcertplay.host.R
 import java.util.Locale
 import androidx.media3.ui.R as Media3R
@@ -160,12 +161,12 @@ class CarPlayVideoActivity : Activity() {
         fun timeText() = TextView(this).apply {
             setTextColor(Color.WHITE)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
-            if (Build.VERSION.SDK_INT >= 21) fontFeatureSettings = "tnum"
+            if (realSdkInt() >= 21) fontFeatureSettings = "tnum"
         }
         position = timeText()
         length = timeText()
         timeBar = SeekBar(this).apply {
-            if (Build.VERSION.SDK_INT >= 21) {
+            if (realSdkInt() >= 21) {
                 progressTintList = ColorStateList.valueOf(Color.WHITE)
                 thumbTintList = ColorStateList.valueOf(Color.WHITE)
                 secondaryProgressTintList = ColorStateList.valueOf(0x80FFFFFF.toInt())
@@ -319,7 +320,7 @@ class CarPlayVideoActivity : Activity() {
         .joinToString(" <- ") { "${it.javaClass.simpleName}(${it.message?.replace(Regex("\\w+://\\S+"), "<url>")})" }
 
     private fun playbackNetworkSummary(): String {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return "network=legacy"
+        if (realSdkInt() < Build.VERSION_CODES.M) return "network=legacy"
         val manager = getSystemService(ConnectivityManager::class.java)
         val network = manager?.activeNetwork
         val capabilities = network?.let(manager::getNetworkCapabilities)

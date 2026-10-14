@@ -7,6 +7,7 @@ import android.hardware.usb.UsbConstants
 import android.hardware.usb.UsbRequest
 import android.os.Build
 import android.util.Log
+import com.shilapi.xcertplay.compat.realSdkInt
 import java.io.Closeable
 import java.nio.ByteBuffer
 import java.util.ArrayDeque
@@ -60,11 +61,11 @@ class NcmUsbBridge internal constructor(
     // section for the whole wait, which blocks ART's GC thread flip and, with it, every other USB
     // transfer (seen as ~0.8 s stalls of video and audio). A timed-out request stays queued, so no
     // data is lost between calls. SharedUsbDeviceConnection routes USBMUX/NCM completions.
-    private val directReadBuffer = ByteBuffer.allocateDirect(usbTransferSize(Build.VERSION.SDK_INT, READ_CHUNK_BYTES))
+    private val directReadBuffer = ByteBuffer.allocateDirect(usbTransferSize(realSdkInt(), READ_CHUNK_BYTES))
     private var readRequest: UsbRequest? = null
     private var readQueued = false
     private val readQueuePolicy = UsbReadQueuePolicy(
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) USBFS_BULK_URB_CEILING_BYTES else Int.MAX_VALUE,
+        if (realSdkInt() < Build.VERSION_CODES.P) USBFS_BULK_URB_CEILING_BYTES else Int.MAX_VALUE,
     )
     private val statusRunning = AtomicBoolean(statusEndpoint != null)
     private val statusThread = statusEndpoint?.let { endpoint ->
@@ -83,7 +84,7 @@ class NcmUsbBridge internal constructor(
             this.sequence.also { this.sequence = (this.sequence + 1) and 0xffff }
         }
         val block = Ntb16Codec.build(frame, sequence)
-        val transferred = writeUsbChunks(block.size, Build.VERSION.SDK_INT, timeoutMillis) { offset, count, timeout ->
+        val transferred = writeUsbChunks(block.size, realSdkInt(), timeoutMillis) { offset, count, timeout ->
             connection.bulkTransfer(outEndpoint, block, offset, count, timeout)
         }
         // Before StartCarPlaySession the phone keeps the NCM data path NAKed. Android reports the
@@ -194,7 +195,7 @@ class NcmUsbBridge internal constructor(
         sharedConnection.release()
         requestToClose?.let(sharedConnection::forget)
         if (requestToClose == null || reaped || !cancelled ||
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+            realSdkInt() >= Build.VERSION_CODES.O
         ) {
             runCatching { requestToClose?.close() }
         }

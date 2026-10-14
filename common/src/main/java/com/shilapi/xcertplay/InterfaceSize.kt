@@ -2,6 +2,7 @@
 package com.shilapi.xcertplay
 
 import android.app.Activity
+import com.shilapi.xcertplay.compat.realSdkInt
 import android.app.AlertDialog
 import android.content.Context
 import android.content.res.Configuration
@@ -51,7 +52,7 @@ object InterfaceSize {
             screenWidthDp = (base.screenWidthDp / scale).roundToInt()
             screenHeightDp = (base.screenHeightDp / scale).roundToInt()
             smallestScreenWidthDp = (base.smallestScreenWidthDp / scale).roundToInt()
-            if (android.os.Build.VERSION.SDK_INT >= 24) {
+            if (realSdkInt() >= 24) {
                 setLocales(base.locales)
                 setLayoutDirection(base.locales[0])
             } else {
@@ -70,7 +71,7 @@ object InterfaceSize {
      */
     internal fun contextOverride(scaled: Configuration): Configuration = Configuration().apply {
         densityDpi = scaled.densityDpi
-        if (android.os.Build.VERSION.SDK_INT >= 24) {
+        if (realSdkInt() >= 24) {
             setLocales(scaled.locales)
             setLayoutDirection(scaled.locales[0])
         } else {

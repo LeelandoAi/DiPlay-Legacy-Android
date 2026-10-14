@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
+import com.shilapi.xcertplay.compat.realSdkInt
 import android.os.Handler
 import android.os.Looper
 import java.util.concurrent.Executors
@@ -44,7 +45,7 @@ internal class HomeScreenMonitor(context: Context, private val onChange: (Boolea
         foregroundListener = listener
 
         // UsageStatsManager poller fallback
-        if (Build.VERSION.SDK_INT >= 21 && DiLink51ClusterMonitor.hasAccess(context)) {
+        if (realSdkInt() >= 21 && DiLink51ClusterMonitor.hasAccess(context)) {
             since = System.currentTimeMillis() - FIRST_LOOK_BACK_MILLIS
             newestTime = 0L
             newestPackage = null
@@ -78,7 +79,7 @@ internal class HomeScreenMonitor(context: Context, private val onChange: (Boolea
     private fun poll() {
         val now = System.currentTimeMillis()
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP_MR1) return
-        val usageManager = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+        val usageManager = if (realSdkInt() >= Build.VERSION_CODES.M) {
             context.getSystemService(UsageStatsManager::class.java)
         } else {
             @Suppress("DEPRECATION")
@@ -132,7 +133,7 @@ internal class HomeScreenMonitor(context: Context, private val onChange: (Boolea
         )
 
         // Accessibility alone is not a foreground source: this PR has no service dispatching events.
-        fun hasAccess(context: Context): Boolean = Build.VERSION.SDK_INT >= 21 && DiLink51ClusterMonitor.hasAccess(context)
+        fun hasAccess(context: Context): Boolean = realSdkInt() >= 21 && DiLink51ClusterMonitor.hasAccess(context)
 
         /** Query all launcher packages declared on the system. */
         fun queryHomePackages(context: Context): Set<String> {

@@ -1,0 +1,58 @@
+name: Verify Release APK Version
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to verify"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  verify-apk-version:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ensure Android build tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! -x "$ANDROID_HOME/build-tools/35.0.0/aapt" ]]; then
+            sdkmanager "build-tools;35.0.0"
+          fi
+          test -x "$ANDROID_HOME/build-tools/35.0.0/aapt"
+      - name: Download release APK and checksum
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.event.release.tag_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release-apk
+          gh release download "$TAG" --repo "$REPOSITORY" --pattern "DiPlay-v*.apk" --dir release-apk
+          gh release download "$TAG" --repo "$REPOSITORY" --pattern "DiPlay-v*.apk.sha256" --dir release-apk
+          test "$(find release-apk -maxdepth 1 -type f -name '*.apk' | wc -l)" -eq 1
+          test "$(find release-apk -maxdepth 1 -type f -name '*.sha256' | wc -l)" -eq 1
+          cd release-apk
+          sha256sum --check *.sha256
+      - name: Verify APK version matches release tag
+        env:
+          TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.event.release.tag_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk=$(find release-apk -maxdepth 1 -name '*.apk' -print -quit)
+          expected="${TAG#v}"
+          metadata=$("$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$apk")
+          version=$(printf '%s\n' "$metadata" | sed -n "s/.*versionName='\([^']*\)'.*/\1/p" | head -1)
+          code=$(printf '%s\n' "$metadata" | sed -n "s/.*versionCode='\([^']*\)'.*/\1/p" | head -1)
+          echo "Tag: $TAG, APK versionName: $version, versionCode: $code"
+          if [[ "$version" != "$expected" || ! "$code" =~ ^[0-9]+$ ]]; then
+            echo "::error::APK metadata does not match release"
+            exit 1
+          fi

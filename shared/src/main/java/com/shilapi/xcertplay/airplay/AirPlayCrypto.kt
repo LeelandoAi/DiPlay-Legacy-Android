@@ -13,6 +13,7 @@ import org.bouncycastle.crypto.params.KeyParameter
 import org.bouncycastle.crypto.params.X25519PrivateKeyParameters
 import org.bouncycastle.crypto.params.X25519PublicKeyParameters
 import org.bouncycastle.crypto.signers.Ed25519Signer
+import org.conscrypt.Conscrypt
 import java.nio.ByteBuffer
 import java.security.GeneralSecurityException
 import java.security.SecureRandom
@@ -37,6 +38,11 @@ object AirPlayCrypto {
      * Android 12. Older supported releases use the array API to avoid extra staging copies. Buffers
      * for unusually large frames are temporary, so a frame cannot permanently retain large native
      * allocations on a long-lived receive thread.
+     *
+     * On Android 4.4 the platform providers offer no ChaCha20-Poly1305, so the bundled Conscrypt
+     * (already shipped for TLS on old ROMs) is tried next: without it every frame fell back to
+     * BouncyCastle's pure-Java implementation and the picture stuttered. The bundled provider is
+     * only asked for a Cipher, never installed into the global provider list.
      */
     private class PlatformChacha(val cipher: Cipher) {
         var input: ByteBuffer = ByteBuffer.allocateDirect(0)
@@ -45,9 +51,18 @@ object AirPlayCrypto {
     }
 
     private val platformState = ThreadLocal.withInitial<PlatformChacha?> {
-        PLATFORM_CHACHA_NAMES.firstNotNullOfOrNull { runCatching { Cipher.getInstance(it) }.getOrNull() }
+        (PLATFORM_CHACHA_NAMES.firstNotNullOfOrNull { runCatching { Cipher.getInstance(it) }.getOrNull() }
+            ?: bundledConscryptCipher())
             ?.let(::PlatformChacha)
     }
+
+    /** Null when the bundled Conscrypt cannot load (e.g. missing native library on a vendor ROM). */
+    private fun bundledConscryptCipher(): Cipher? =
+        runCatching { Conscrypt.newProvider() }.getOrNull()?.let { provider ->
+            PLATFORM_CHACHA_NAMES.firstNotNullOfOrNull {
+                runCatching { Cipher.getInstance(it, provider) }.getOrNull()
+            }
+        }
 
     /** Implementation used by this thread's last successful operation, for diagnostics. */
     val chachaImplementation: String

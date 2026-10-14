@@ -40,7 +40,7 @@ object BluetoothCompat {
 private object BluetoothCompatApi18 {
     @SuppressLint("MissingPermission")
     fun getAdapter(context: Context): BluetoothAdapter? {
-        val bm = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+        val bm = if (realSdkInt() >= Build.VERSION_CODES.M) {
             context.getSystemService(BluetoothManager::class.java)
         } else {
             @Suppress("DEPRECATION")

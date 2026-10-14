@@ -23,6 +23,7 @@ import com.shilapi.xcertplay.transport.NcmUsbBridge
 import java.io.IOException
 import java.net.Inet6Address
 import java.net.InetAddress
+import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
 import java.util.concurrent.atomic.AtomicBoolean
@@ -41,6 +42,8 @@ class CarPlayVpnService : VpnService() {
     sealed class AttachResult {
         data object Started : AttachResult()
         data object AlreadyStarted : AttachResult()
+        /** Existing TUN reused; NCM bridge swapped to the new NCM without re-establishing VPN. */
+        data object Reused : AttachResult()
         data class Failed(val message: String) : AttachResult()
     }
 
@@ -65,6 +68,14 @@ class CarPlayVpnService : VpnService() {
     private var additionalServers: List<ServerSocket> = emptyList()
     @Volatile private var bridge: Ipv6NcmBridge? = null
     private var tun: ParcelFileDescriptor? = null
+    /**
+     * Issue #145: the iPhone discovers the wired AirPlay endpoint via Bonjour on the
+     * USB link — it sends mDNS queries but never opens TCP/7000 until something
+     * answers. This advertises _airplay._tcp on the TUN link-local address for the
+     * lifetime of the wired attachment (the wireless path does the same on the
+     * hotspot interface).
+     */
+    private var wiredBonjour: CarPlayBonjour? = null
     private var attachGeneration = 0
     @Volatile var lastAttachFailure: String? = null
         private set
@@ -91,6 +102,34 @@ class CarPlayVpnService : VpnService() {
         listener: AirPlaySessionListener,
         media: AirPlayMediaHandler,
     ): AttachResult {
+        // Issue: on 4.4-framework ROMs (e.g. Allwinner T3) the framework's establish()
+        // adds a UID fwmark rule to netd, but closing the TUN does NOT remove it.
+        // If a previous attempt failed at AirPlay TCP (iPhone never connected), the
+        // VPN itself is healthy — tearing it down leaks the fwmark rule and the
+        // retry's establish() is rejected with "Invalid argument". Reuse the TUN
+        // instead of re-establishing; the rest of the flow (bridge, listener,
+        // Bonjour) runs normally with the new NCM/attachment.
+        // Note: detach() keeps the TUN open (active=false but tun != null), so
+        // check tun != null, not just active.
+        var reuseTun = false
+        val existingTun = tun
+        if (existingTun != null) {
+            val canReuse = if (active.get()) {
+                attachment?.address?.hostAddress == linkLocal
+            } else {
+                // Detached but TUN kept alive for reuse. The link-local is the
+                // same for all wired attempts (config.linkLocal).
+                true
+            }
+            if (canReuse) {
+                reuseTun = true
+                runCatching { listener.onDebugLog("wired VPN TUN reused (no re-establish, fwmark rule preserved)") }
+            } else {
+                Log.i(TAG, "replacing stale NCM/VPN attachment (TUN not reusable)")
+                existingTun.close()
+                tun = null
+            }
+        }
         if (active.get()) {
             Log.i(TAG, "replacing stale NCM/VPN attachment")
             releaseLocked()
@@ -108,7 +147,7 @@ class CarPlayVpnService : VpnService() {
 
             val builder = Builder()
                 .addAddress(linkLocal, LINK_PREFIX)
-                .addRoute(LINK_LOCAL_ROUTE, LINK_PREFIX)
+                .addRoute(LINK_LOCAL_ROUTE, LINK_ROUTE_PREFIX)
                 .setSession(SESSION_NAME)
                 .setMtu(TUN_MTU)
             if (realSdkInt() >= 21 && !perAppVpnUnsupported) {
@@ -123,7 +162,9 @@ class CarPlayVpnService : VpnService() {
             // Only the IPv6 link-local route above is installed; no default route, DNS,
             // Wi-Fi internet or mobile internet is captured.
             attachStage = "VPN establish"
-            val tunFd = try {
+            val tunFd = if (reuseTun) {
+                existingTun!!
+            } else try {
                 builder.establish()
             } catch (error: Exception) {
                 if (!perAppVpnUnsupported && isUidRuleUnsupported(error)) {
@@ -138,7 +179,7 @@ class CarPlayVpnService : VpnService() {
                         }
                         val fallbackBuilder = Builder()
                             .addAddress(linkLocal, LINK_PREFIX)
-                            .addRoute(LINK_LOCAL_ROUTE, LINK_PREFIX)
+                            .addRoute(LINK_LOCAL_ROUTE, LINK_ROUTE_PREFIX)
                             .setSession(SESSION_NAME)
                             .setMtu(TUN_MTU)
                         fallbackBuilder.setBlocking(true)
@@ -171,7 +212,7 @@ class CarPlayVpnService : VpnService() {
             } ?: throw IOException("VpnService.establish returned null")
             tun = tunFd
             runCatching { listener.onDebugLog("wired VPN TUN established address=$linkLocal mtu=$TUN_MTU") }
-            if (Build.VERSION.SDK_INT < 21) LegacyTunBlocking.enable(tunFd)
+            if (realSdkInt() < 21) LegacyTunBlocking.enable(tunFd)
 
             val ipv6Bridge = Ipv6NcmBridge(
                 ncm = ncm,
@@ -199,12 +240,84 @@ class CarPlayVpnService : VpnService() {
             startAirPlayServer(
                 generation,
                 AirPlayAttachment(scopedAddress, config, identity, pairings, mfi, listener, media),
+                listenerReuseAddress = true,
             )
             runCatching { listener.onDebugLog("wired AirPlay listener bound port=${boundPort()}") }
             boundPort()?.let { port ->
                 runCatching { listener.onDebugLog("wired airplay listen kernel-check: ${verifyTcp6Listen(port)}") }
             }
-            AttachResult.Started
+            // Issue #152: best-effort extra listener on the IPv6 wildcard of the same
+            // link. On kernels whose scope matching drops the SYN addressed to the
+            // scoped link-local listener, the wildcard socket can still catch it.
+            // Best-effort only: a failure here must never break the attach that
+            // already succeeded. The primary socket above sets SO_REUSEADDR so the
+            // wildcard bind can coexist on the same port.
+            runCatching {
+                val wildcard = AirPlaySocketBinder.wildcard(scopedAddress)
+                val port = boundPort()
+                if (wildcard != null && wildcard != scopedAddress && port != null) {
+                    val extra = ServerSocket().apply {
+                        reuseAddress = true
+                        bind(InetSocketAddress(wildcard, port))
+                    }
+                    additionalServers = additionalServers + extra
+                    runCatching {
+                        listener.onDebugLog(
+                            "airplay listener ready family=IPv6 port=${extra.localPort} wildcard",
+                        )
+                    }
+                    Thread({ acceptLoop(generation, extra) }, "airplay-accept").apply {
+                        isDaemon = true
+                        start()
+                    }
+                }
+            }.onFailure { error -> Log.w(TAG, "wired wildcard AirPlay listener unavailable", error) }
+            attachStage = "wired mDNS AirPlay advertisement"
+            // Best-effort: if the advertisement fails, the attach still stands (the
+            // iPhone may already know the endpoint); without it the iPhone keeps
+            // sending mDNS queries and never opens the AirPlay TCP connection.
+            runCatching {
+                val bonjour = CarPlayBonjour(
+                    context = this@CarPlayVpnService,
+                    config = config.copy(port = boundPort() ?: config.port),
+                    identity = identity,
+                    advertisedHost = linkLocal,
+                    useInterfaceMdns = useBundledCarPlayMdns(Build.VERSION.SDK_INT),
+                    onEvent = { event ->
+                        runCatching { listener.onDebugLog("wired bonjour: ${event.diagnosticSummary()}") }
+                    },
+                )
+                bonjour.start()
+                wiredBonjour = bonjour
+                listener.onDebugLog(
+                    "wired mDNS AirPlay advertisement started on $linkLocal port=${boundPort() ?: config.port}",
+                )
+            }.onFailure { error ->
+                Log.w(TAG, "wired mDNS AirPlay advertisement failed", error)
+                runCatching { listener.onDebugLog("wired mDNS AirPlay advertisement failed: ${error.message}") }
+            }
+            attachStage = "wired mDNS unicast responder"
+            // Issue #148: v0.2.48 proved the JmDNS advertisement above cannot reach the
+            // iPhone — the wired VPN only installs the unicast fe80::/10 route, so the
+            // kernel routes JmDNS's multicast announcements out the physical interface
+            // and they never cross the NCM bridge. Answer the iPhone's mDNS queries
+            // with unicast responses at the packet layer instead; needs real-device
+            // verification.
+            runCatching {
+                ipv6Bridge.mdnsResponder = WiredMdnsResponder(
+                    deviceName = config.deviceName,
+                    hostLinkLocal = linkLocal,
+                    airPlayPort = boundPort() ?: config.port,
+                    txtRecords = CarPlayBonjourProtocol.airPlayTxtRecords(config, identity),
+                )
+                listener.onDebugLog(
+                    "wired mdns unicast responder armed on $linkLocal port=${boundPort() ?: config.port}",
+                )
+            }.onFailure { error ->
+                Log.w(TAG, "wired mDNS unicast responder setup failed", error)
+                runCatching { listener.onDebugLog("wired mDNS unicast responder setup failed: ${error.message}") }
+            }
+            if (reuseTun) AttachResult.Reused else AttachResult.Started
         } catch (error: Exception) {
             lastAttachFailure = "$attachStage: ${attachFailure(error)}"
             Log.e(TAG, "wired VPN/NCM attach failed: $lastAttachFailure", error)
@@ -306,22 +419,68 @@ class CarPlayVpnService : VpnService() {
         }
     }
 
+    /**
+     * Issue #155/#123: the iPhone's TCP SYNs arrive over NCM and are injected into the
+     * TUN, but the kernel never answers on some 4.4 kernels. Snapshot the kernel's TCP
+     * table for the AirPlay port: a SYN_RECV entry proves the kernel received the SYN
+     * and emitted SYN-ACK (so the break is on the SYN-ACK return path through the
+     * bridge); no SYN_RECV with injectedTcp > 0 proves the injected packets never
+     * reached the kernel TCP stack.
+     */
+    fun tunTcpSnapshot(): String {
+        val port = boundPort() ?: return "tun tcp6 snapshot unavailable: no bound port"
+        val portHex = port.toString(16).uppercase().padStart(4, '0')
+        val injected = bridge?.injectedTcpPackets?.get() ?: -1
+        var listen = 0
+        var synRecv = 0
+        var established = 0
+        var other = 0
+        runCatching {
+            java.io.File("/proc/net/tcp6").bufferedReader().use { reader ->
+                var line = reader.readLine()
+                while (line != null) {
+                    // Columns: sl | local_address | rem_address | st | ...
+                    // st: 01=ESTABLISHED 03=SYN_RECV 0A=LISTEN
+                    val fields = line.trim().split(Regex("\\s+"))
+                    if (fields.size >= 4 &&
+                        fields[1].endsWith(":$portHex", ignoreCase = true)
+                    ) {
+                        when {
+                            fields[3].equals("0A", ignoreCase = true) -> listen++
+                            fields[3].equals("03", ignoreCase = true) -> synRecv++
+                            fields[3].equals("01", ignoreCase = true) -> established++
+                            else -> other++
+                        }
+                    }
+                    line = reader.readLine()
+                }
+            }
+        }
+        return "tun tcp6 port=$port listen=$listen synRecv=$synRecv " +
+            "established=$established other=$other injectedTcp=$injected"
+    }
+
     override fun onDestroy() {
-        detach()
+        releaseLocked()
+        // releaseLocked keeps the TUN open for reuse; close it here since
+        // the Service is really being destroyed.
+        tun?.close()
+        tun = null
         super.onDestroy()
     }
 
     private fun startAirPlayServer(
         generation: Int,
         replacement: AirPlayAttachment,
+        listenerReuseAddress: Boolean = false,
     ) {
         val servers = if (replacement.additionalAddresses.isEmpty()) {
-            listOf(AirPlayPortSelector.bind(replacement.address, replacement.config.port) { busy, bound ->
+            listOf(AirPlayPortSelector.bind(replacement.address, replacement.config.port, reuseAddress = listenerReuseAddress) { busy, bound ->
                 Log.w(TAG, "AirPlay port $busy is in use; listening on $bound instead")
             })
         } else {
             AirPlayPortSelector.bindAll(listOf(replacement.address) + replacement.additionalAddresses,
-                replacement.config.port) { busy, bound ->
+                replacement.config.port, reuseAddress = listenerReuseAddress) { busy, bound ->
                 Log.w(TAG, "AirPlay port $busy is in use; listening on $bound instead")
             }
         }
@@ -475,14 +634,31 @@ class CarPlayVpnService : VpnService() {
         closeSessionsLocked()
         bridge?.close()
         bridge = null
-        tun?.close()
-        tun = null
+        runCatching { wiredBonjour?.close() }
+        wiredBonjour = null
+        // Keep ONLY the TUN open for reuse: on 4.4-framework ROMs the
+        // framework's establish() adds a UID fwmark rule to netd, but closing
+        // the TUN does NOT remove it. If a retry re-establishes, netd rejects
+        // the duplicate rule with "Invalid argument". The next attach()
+        // reuses the TUN (skipping establish) and rebuilds the bridge,
+        // listener and Bonjour normally. The TUN is closed in onDestroy()
+        // when the Service is really being destroyed.
     }
 
     companion object {
         private const val TAG = "xcertplay-usb"
         private const val LINK_PREFIX = 64
         private const val LINK_LOCAL_ROUTE = "fe80::"
+        /**
+         * Issue #148/#150: the route must cover the whole link-local range (fe80::/10), not
+         * just fe80::/64. The iPhone's link-local address is EUI-64 derived from its MAC
+         * (fe80::xxxx:xxxx:xxxx:xxxx with non-zero middle bits), so it is NOT inside
+         * fe80::/64. With the /64 route the kernel accepted the iPhone's TCP SYN (the
+         * listener address is local) but had no route back for the SYN-ACK and dropped it
+         * silently — "no AirPlay TCP after CarPlay StartSession" with SYNs visible on the
+         * NCM bridge. The interface address itself stays /64; only the route widens.
+         */
+        private const val LINK_ROUTE_PREFIX = 10
         private const val SESSION_NAME = "xcertplay CarPlay"
         private const val TUN_MTU = 1500
 
@@ -517,7 +693,27 @@ class CarPlayVpnService : VpnService() {
                 message.contains("fwmark rule add", ignoreCase = true) &&
                     message.contains("No such device", ignoreCase = true)
             }
-            if (!wedged) return error
+            if (!wedged) {
+                // Issue #137: some 4.4.x ROMs (e.g. Hangsheng on 4.4.3) have a broken
+                // VPN framework service: establish() dies inside Parcel.readException
+                // with a NullPointerException. The app cannot repair the system VPN
+                // service; translate into an actionable hint.
+                val brokenVpnService = generateSequence(error) { it.cause }.take(8).any { cause ->
+                    cause is NullPointerException &&
+                        cause.stackTrace.any { it.className == "android.os.Parcel" &&
+                            it.methodName == "readException" }
+                }
+                if (!brokenVpnService) return error
+                return IOException(
+                    "VPN establish failed: the head unit's system VPN service is broken " +
+                        "(NullPointerException inside Parcel.readException); the ROM's VPN " +
+                        "framework cannot create the TUN interface. Reboot the head unit and " +
+                        "retry; if it persists, the ROM's VPN service is unusable and wired " +
+                        "CarPlay cannot work on this ROM. " +
+                        "Original error: ${error.message}",
+                    error,
+                )
+            }
             return IOException(
                 "VPN establish failed: the system netd rejected its own fwmark rule for the " +
                     "TUN interface (\"No such device\"); the head unit's VPN state is wedged " +

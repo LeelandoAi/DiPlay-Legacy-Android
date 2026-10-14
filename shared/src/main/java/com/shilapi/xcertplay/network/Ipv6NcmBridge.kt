@@ -11,6 +11,7 @@ import java.io.IOException
 import java.net.Inet6Address
 import java.net.InetAddress
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.locks.LockSupport
 
 /**
@@ -28,6 +29,13 @@ class Ipv6NcmBridge(
     private val hostLinkLocal: String,
     private val onDebugLog: (String) -> Unit = {},
     private val onError: (Throwable) -> Unit,
+    /**
+     * Issue #148: answers the iPhone's wired mDNS queries for _airplay._tcp with unicast
+     * responses. JmDNS multicast announcements cannot cross the VPN TUN (the kernel
+     * routes multicast out the physical interface), so without this the iPhone keeps
+     * querying and never opens TCP/7000. Null disables the interception.
+     */
+    @Volatile var mdnsResponder: WiredMdnsResponder? = null,
 ) : Closeable {
     init {
         require(hostMac.size == EthernetIpv6Codec.MAC_BYTES) { "hostMac must be 6 bytes" }
@@ -59,6 +67,18 @@ class Ipv6NcmBridge(
      */
     private var reportTcpBudget = 8
     private var outboundLogBudget = 24
+    /** Issue #148: keep wired mDNS answers visible without spamming the report. */
+    private var mdnsAnswerLogBudget = 6
+    /** Issue #152: keep unmatched wired mDNS query names visible without spamming. */
+    private var unmatchedMdnsLogBudget = 6
+    /**
+     * Issue #155/#123: the iPhone's TCP SYNs reach the NCM bridge but the kernel never
+     * answers on some 4.4 kernels. Count TCP packets written into the TUN so a later
+     * report can tell "bridge never wrote" from "kernel dropped / never answered".
+     */
+    val injectedTcpPackets = AtomicInteger(0)
+    /** Issue #123: confirm each sampled SYN actually made it into the TUN. */
+    private var tunInjectLogBudget = 8
     @Volatile
     private var lastNaTimeNanos = 0L
     private val running = AtomicBoolean(false)
@@ -128,6 +148,36 @@ class Ipv6NcmBridge(
                     continue
                 }
 
+                // Issue #148: answer the iPhone's mDNS queries for the wired AirPlay
+                // service with a unicast response sent straight back over NCM. The
+                // query must not also be injected into the TUN: nothing on the TUN
+                // answers it usefully, and a duplicate multicast reply would only
+                // confuse the iPhone's resolver.
+                val responder = mdnsResponder
+                val mdnsAnswer = responder?.answerFrame(
+                    frame, ipv6.payloadOffset, ipv6.payloadLength, hostMac, ipv6.sourceMac,
+                )
+                if (mdnsAnswer != null) {
+                    ncm.send(mdnsAnswer, WRITE_TIMEOUT_MILLIS)
+                    if (mdnsAnswerLogBudget > 0) {
+                        mdnsAnswerLogBudget--
+                        val answerMsg = "ncm answered wired mdns _airplay query with unicast response " +
+                            "bytes=${mdnsAnswer.size}"
+                        Log.i(TAG, answerMsg)
+                        runCatching { onDebugLog(answerMsg) }
+                    }
+                    continue
+                }
+                // Issue #152: when no answer matched, record what the iPhone actually
+                // asked for so the next report shows the real query names.
+                if (responder != null && unmatchedMdnsLogBudget > 0) {
+                    val queryName = responder.unmatchedQueryName(frame, ipv6.payloadOffset, ipv6.payloadLength)
+                    if (queryName != null) {
+                        unmatchedMdnsLogBudget--
+                        runCatching { onDebugLog("ncm wired mdns query not answered name=$queryName") }
+                    }
+                }
+
                 if (!loggedInbound) {
                     loggedInbound = true
                     val inMsg = "ncm first inbound ipv6 bytes=${ipv6.payloadLength} peer=${ipv6.sourceMac.macString()}"
@@ -150,7 +200,35 @@ class Ipv6NcmBridge(
                     reportInboundBudget--
                     runCatching { onDebugLog("ncm inbound diag ${frame.diagnosticSummary(ipv6.payloadOffset)}") }
                 }
+                val isTcp = inboundNextHeader == 6
+                if (isTcp) injectedTcpPackets.incrementAndGet()
                 output.write(frame, ipv6.payloadOffset, ipv6.payloadLength)
+                if (isTcp && tunInjectLogBudget > 0) {
+                    // Issue #123: prove the SYN crossed into the kernel's TUN. A throw
+                    // above surfaces through onError instead; reaching here means the
+                    // write completed.
+                    tunInjectLogBudget--
+                    val dstPort = if (ipv6.payloadLength >= 44) {
+                        ((frame[ipv6.payloadOffset + 42].toInt() and 0xff) shl 8) or
+                            (frame[ipv6.payloadOffset + 43].toInt() and 0xff)
+                    } else -1
+                    // Issue #155/#160: a SYN whose destination is not the TUN address,
+                    // or whose TCP checksum is bad, is dropped by the kernel silently
+                    // (no SYN_RECV, no RST) — exactly the observed signature. Record
+                    // both so the next report can rule them in or out.
+                    val dstLocal = ipv6.payloadLength >= 40 &&
+                        frame.copyOfRange(
+                            ipv6.payloadOffset + 24,
+                            ipv6.payloadOffset + 40,
+                        ).contentEquals(hostLinkLocalBytes)
+                    val checksumOk = tcpChecksumValid(frame, ipv6.payloadOffset, ipv6.payloadLength)
+                    runCatching {
+                        onDebugLog(
+                            "ncm tun inject tcp bytes=${ipv6.payloadLength} dstPort=$dstPort " +
+                                "dstLocal=$dstLocal tcpChecksum=${if (checksumOk) "ok" else "bad"} ok",
+                        )
+                    }
+                }
             }
         } catch (error: IOException) {
             if (running.get()) onError(error)
@@ -277,6 +355,34 @@ class Ipv6NcmBridge(
 
     private fun ByteArray.u16(offset: Int): Int =
         ((this[offset].toInt() and 0xff) shl 8) or (this[offset + 1].toInt() and 0xff)
+
+    /**
+     * Validates the TCP checksum of one IPv6 packet ([offset]/[length] view into
+     * [frame]). The pseudo-header (source, destination, next header, TCP length)
+     * plus the whole TCP segment — checksum field included — must fold to 0xffff
+     * for a valid checksum. Returns false for truncated input.
+     */
+    private fun tcpChecksumValid(frame: ByteArray, offset: Int, length: Int): Boolean {
+        if (length < 40 + 20 || offset < 0 || offset + length > frame.size) return false
+        val tcpStart = offset + 40
+        val tcpLength = length - 40
+        var sum = 0L
+        fun addWords(start: Int, bytes: Int) {
+            var pos = start
+            val end = start + bytes
+            while (pos + 1 < end) {
+                sum += (((frame[pos].toInt() and 0xff) shl 8) or (frame[pos + 1].toInt() and 0xff)).toLong()
+                pos += 2
+            }
+            if (pos < end) sum += ((frame[pos].toInt() and 0xff) shl 8).toLong()
+        }
+        addWords(offset + 8, 32) // pseudo-header: source + destination
+        sum += 6 // three zero bytes + next header (TCP)
+        sum += tcpLength.toLong() // TCP length as 32 bits; high half is zero
+        addWords(tcpStart, tcpLength)
+        while (sum ushr 16 != 0L) sum = (sum and 0xffff) + (sum ushr 16)
+        return sum == 0xffffL
+    }
 
     private companion object {
         const val TAG = "xcertplay-usb"

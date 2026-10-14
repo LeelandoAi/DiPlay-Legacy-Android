@@ -61,6 +61,7 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.shilapi.xcertplay.airplay.CarPlayMediaButton
+import com.shilapi.xcertplay.compat.realSdkInt
 import com.shilapi.xcertplay.airplay.AirPlayConfig
 import com.shilapi.xcertplay.airplay.AirPlayDisplaySettings
 import com.shilapi.xcertplay.airplay.AirPlayPhysicalSizeBasis
@@ -581,6 +582,7 @@ class CarPlayHostActivity : ComponentActivity() {
             )
         }
         CenterMapOverlay.requestShow = ::showCenterMap
+        FloatingDotOverlay.restoreIfEnabled(applicationContext)
         MapMirrors.sink = mirrorSink
         MapMirrors.onChanged = mirrorsChanged
         languagePreferenceAtCreate = AppLocale.preference(this)
@@ -593,7 +595,7 @@ class CarPlayHostActivity : ComponentActivity() {
         }
         WheelKeyService.restoreIfNeeded(this)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1) {
-            val displayManager = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val displayManager = if (realSdkInt() >= Build.VERSION_CODES.M) {
                 getSystemService(android.hardware.display.DisplayManager::class.java)
             } else {
                 @Suppress("DEPRECATION")
@@ -821,7 +823,7 @@ class CarPlayHostActivity : ComponentActivity() {
                     add(Manifest.permission.ACCESS_FINE_LOCATION)
                 }
             }
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && needsWifiRuntimePermission -> listOf(
+            realSdkInt() >= Build.VERSION_CODES.M && needsWifiRuntimePermission -> listOf(
                 Manifest.permission.ACCESS_COARSE_LOCATION,
                 Manifest.permission.ACCESS_FINE_LOCATION,
             )
@@ -913,7 +915,7 @@ class CarPlayHostActivity : ComponentActivity() {
         advancedAudioChannelMapping =
             advancedAudioChannelMappingSupported &&
                 AirPlayPersistence.loadAdvancedAudioChannelMapping(this)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP &&
+        if (realSdkInt() >= Build.VERSION_CODES.LOLLIPOP &&
             DiLink51ClusterLayout.automatic(this) && clusterMonitor == null) {
             clusterMonitor = DiLink51ClusterMonitor(this, ::onClusterActivityState).also { it.start() }
         } else if (!DiLink51ClusterLayout.automatic(this)) {
@@ -1386,9 +1388,9 @@ class CarPlayHostActivity : ComponentActivity() {
         mainHandler.removeCallbacks(refreshTurnOverlay)
         AirPlayPersistence.overlaySettingsListener = null
         com.shilapi.xcertplay.hud.BydNavigationOutputs.setTurnOverlayListener(null)
-        if (Build.VERSION.SDK_INT >= 21) clusterMonitor?.stop()
+        if (realSdkInt() >= 21) clusterMonitor?.stop()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1) {
-            val displayManager = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val displayManager = if (realSdkInt() >= Build.VERSION_CODES.M) {
                 getSystemService(android.hardware.display.DisplayManager::class.java)
             } else {
                 @Suppress("DEPRECATION")
@@ -2513,12 +2515,12 @@ class CarPlayHostActivity : ComponentActivity() {
             val switch = Switch(this@CarPlayHostActivity).apply {
                 isChecked = locationReportingEnabled
                 contentDescription = getString(R.string.report_android_location_to_the_iphone)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                if (realSdkInt() >= Build.VERSION_CODES.LOLLIPOP) {
                     showText = false
                     textOn = ""
                     textOff = ""
                 }
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                if (realSdkInt() >= Build.VERSION_CODES.M) {
                     thumbTintList = ColorStateList(
                         arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()),
                         intArrayOf(MENU_ACCENT, MENU_SECONDARY),
@@ -2623,7 +2625,7 @@ class CarPlayHostActivity : ComponentActivity() {
         val seekBar = SeekBar(this).apply {
             max = (values.size - 1).coerceAtLeast(0)
             progress = selectedIndex
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            if (realSdkInt() >= Build.VERSION_CODES.LOLLIPOP) {
                 splitTrack = false
                 progressTintList = ColorStateList.valueOf(MENU_ACCENT)
                 thumbTintList = ColorStateList.valueOf(MENU_ACCENT)
@@ -3139,7 +3141,7 @@ class CarPlayHostActivity : ComponentActivity() {
             setPadding(0, dp(8), 0, 0)
         }
         val modes = buildList {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            if (realSdkInt() >= Build.VERSION_CODES.N) {
                 add(
                     WirelessHotspotMode.WIFI_P2P to
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -3538,7 +3540,7 @@ class CarPlayHostActivity : ComponentActivity() {
         } else decoderCanvasSupport(display)
 
     private fun decoderCanvasSupport(display: AirPlayDisplayConfig): CanvasSupport = try {
-        if (Build.VERSION.SDK_INT < 21) {
+        if (realSdkInt() < 21) {
             CanvasSupport(false, "legacy_decoder_capabilities", "Keep the native screen canvas on Android 4.4")
         } else {
         val mime = if (hevcEnabled) MediaFormat.MIMETYPE_VIDEO_HEVC else MediaFormat.MIMETYPE_VIDEO_AVC
@@ -3550,7 +3552,7 @@ class CarPlayHostActivity : ComponentActivity() {
         if (decoder == null) {
             CanvasSupport(false, "no_decoder", "Decoder capability mime=$mime result=no_decoder")
         } else {
-            val hardware = if (Build.VERSION.SDK_INT >= 29) decoder.isHardwareAccelerated
+            val hardware = if (realSdkInt() >= 29) decoder.isHardwareAccelerated
                 else !decoder.name.startsWith("OMX.google.") && !decoder.name.startsWith("c2.android.")
             val video = decoder.getCapabilitiesForType(mime).videoCapabilities
             val sizeSupported = video?.isSizeSupported(display.widthPixels, display.heightPixels) == true
@@ -4249,10 +4251,10 @@ class CarPlayHostActivity : ComponentActivity() {
         }
         try {
             val service = Intent(this, DiPlaySessionService::class.java)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(service)
+            if (realSdkInt() >= Build.VERSION_CODES.O) startForegroundService(service)
             else startService(service)
             next.start()
-        } catch (error: RuntimeException) {
+        } catch (error: Throwable) {
             appendLog("Connection could not start: ${error.javaClass.simpleName}")
             shutdown(false, "foreground service could not start")
             setConnectionStage(getString(R.string.could_not_start_carplay_return_to_diplay_and_check_app_per))
@@ -4336,7 +4338,7 @@ class CarPlayHostActivity : ComponentActivity() {
     }
 
     private fun isMultiWindowActive(): Boolean {
-        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && isInMultiWindowMode
+        return realSdkInt() >= Build.VERSION_CODES.N && isInMultiWindowMode
     }
 
 
@@ -4547,11 +4549,39 @@ class CarPlayHostActivity : ComponentActivity() {
         startCarPlay(size)
     }
 
+    /**
+     * Issues #143/#144: the head unit's netd VPN state can wedge (stale fwmark uid/rule
+     * from a previous session not cleaned up). The framework's establish() then fails
+     * identically every time with "Invalid argument" / "Device or resource busy" / "No such
+     * device" — the app cannot clear netd state, only a reboot (or app restart) recovers it.
+     * Detect this from the translated hint text so the retry loop stops instead of hammering
+     * a doomed establish forever.
+     */
+    private fun isUnrecoverableVpnState(reason: String): Boolean {
+        val lower = reason.lowercase()
+        // Matches the hints produced by CarPlayVpnService.withStaleUidRuleHint /
+        // withWedgedVpnHint: netd rejected the fwmark rule and only a reboot recovers it.
+        return lower.contains("netd") &&
+            (lower.contains("invalid argument") ||
+                lower.contains("device or resource busy") ||
+                lower.contains("no such device")) &&
+            lower.contains("reboot")
+    }
+
     private fun reconnectAfterLoss(reason: String, startupFailure: WirelessStartupFailure? = null) {
         if (!CarPlayBackgroundSession.isOwner(this)) return
         if (menuOpen) recoveryPendingAfterMenu = true
         if (shuttingDown.get() || menuOpen || handshakeResetInProgress || startupRetryStopped) return
         if (reconnectScheduled) return
+        // Issues #143/#144: when the head unit's netd VPN state is wedged (stale fwmark
+        // uid/rule rejected with "Invalid argument" / "Device or resource busy" / "No such
+        // device"), the app cannot clear it — every re-establish fails identically. Stop the
+        // automatic retry loop instead of hammering a doomed establish; the user must reboot.
+        if (isUnrecoverableVpnState(reason)) {
+            appendLog("wired VPN netd state unrecoverable; automatic retry stopped, reboot required generation=$restartGeneration")
+            setConnectionStage(reason)
+            return
+        }
         val startupDelay = if (startupFailure != null && startupFailure != WirelessStartupFailure.HOTSPOT_CONFIGURATION)
             startupRetryBudget.nextDelayMillis() else null
         if (startupFailure != null && startupDelay == null) {
@@ -4658,11 +4688,17 @@ class CarPlayHostActivity : ComponentActivity() {
         settingsBaseline = captureSettingsBaseline()
         // Rebuild controls from saved values so a cancelled edit cannot reappear on reopening.
         settingsMenu?.let { previous ->
-            val parent = previous.parent as ViewGroup
-            val index = parent.indexOfChild(previous)
-            parent.removeView(previous)
+            // The old menu may already be detached (hierarchy torn down and rebuilt);
+            // a hard cast on a null parent used to crash the process from the gesture
+            // handler after repeated opens. Fall back to the content root so the menu
+            // still shows instead of crashing.
+            val parent = previous.parent as? ViewGroup
+                ?: findViewById<ViewGroup>(android.R.id.content)
+                ?: return@let
+            val index = parent.indexOfChild(previous).takeIf { it >= 0 } ?: parent.childCount
+            if (previous.parent === parent) parent.removeView(previous)
             settingsMenu = buildSettingsMenu()
-            parent.addView(settingsMenu, index, FrameLayout.LayoutParams(-1, -1))
+            parent.addView(settingsMenu, index.coerceAtMost(parent.childCount), FrameLayout.LayoutParams(-1, -1))
         }
         menuOpen = true
         gestureOverlay?.visibility = View.GONE
@@ -4775,7 +4811,7 @@ class CarPlayHostActivity : ComponentActivity() {
     private fun exitApplication() {
         if (shuttingDown.get()) return
         restoreSettingsBaseline()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) finishAndRemoveTask() else finish()
+        if (realSdkInt() >= Build.VERSION_CODES.LOLLIPOP) finishAndRemoveTask() else finish()
         shutdown(terminateProcess = true, reason = "settings exit application")
     }
 
@@ -4813,7 +4849,8 @@ class CarPlayHostActivity : ComponentActivity() {
     private fun observeVideoWindow(texture: TextureView) {
         val probe = object : ViewTreeObserver.OnPreDrawListener {
             override fun onPreDraw(): Boolean {
-                if (!texture.isAttachedToWindow) return true
+                // ViewCompat handles API < 19 where View.isAttachedToWindow doesn't exist.
+                if (!androidx.core.view.ViewCompat.isAttachedToWindow(texture)) return true
                 removeVideoSurfaceProbe()
                 if (isDestroyed || videoView !== texture) return true
                 val mode = carPlayVideoSurfaceMode(texture.isHardwareAccelerated, smoothVideo, directSurfaceView)

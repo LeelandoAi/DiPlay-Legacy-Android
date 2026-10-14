@@ -3,6 +3,7 @@ package com.shilapi.xcertplay.media
 import android.media.MediaCodec
 import android.media.MediaFormat
 import android.os.Build
+import com.shilapi.xcertplay.compat.realSdkInt
 import android.util.Log
 import java.io.Closeable
 
@@ -34,19 +35,20 @@ internal class OpusEncoder(bitrate: Int) : Closeable {
         Log.w(TAG, "Opus microphone encoder unavailable", error)
         null
     }
+    private val native: NativeOpusEncoder? = if (codec == null) NativeOpusEncoder.create(bitrate) else null
     private val bufferInfo = MediaCodec.BufferInfo()
     private var presentationTimeUs = 0L
     private var closed = false
     private var outputPackets = 0
 
-    val available: Boolean get() = codec != null && !closed
+    val available: Boolean get() = !closed && (codec != null || native?.available == true)
 
     /**
      * Queues one 20 ms PCM frame and returns all Opus access units made available by the codec.
      */
     fun encode(pcm: ByteArray): List<ByteArray> {
-        val codec = codec ?: return emptyList()
         if (closed) return emptyList()
+        val codec = codec ?: return native?.encode(pcm) ?: emptyList()
         val inputIndex = try {
             codec.dequeueInputBuffer(INPUT_TIMEOUT_US)
         } catch (error: Exception) {
@@ -55,7 +57,7 @@ internal class OpusEncoder(bitrate: Int) : Closeable {
         }
         if (inputIndex >= 0) {
             @Suppress("DEPRECATION")
-            val input = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            val input = if (realSdkInt() >= Build.VERSION_CODES.LOLLIPOP) {
                 codec.getInputBuffer(inputIndex)
             } else {
                 codec.inputBuffers[inputIndex]
@@ -97,7 +99,7 @@ internal class OpusEncoder(bitrate: Int) : Closeable {
                         continue
                     }
                     @Suppress("DEPRECATION")
-                    val buffer = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                    val buffer = if (realSdkInt() >= Build.VERSION_CODES.LOLLIPOP) {
                         codec.getOutputBuffer(index)
                     } else {
                         codec.outputBuffers[index]
@@ -127,6 +129,7 @@ internal class OpusEncoder(bitrate: Int) : Closeable {
     override fun close() {
         if (closed) return
         closed = true
+        native?.close()
         val codec = codec ?: return
         try {
             codec.stop()

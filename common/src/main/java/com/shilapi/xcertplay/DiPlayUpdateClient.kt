@@ -1,6 +1,7 @@
 package com.shilapi.xcertplay
 
 import org.json.JSONObject
+import com.shilapi.xcertplay.compat.realSdkInt
 import com.shilapi.xcertplay.host.R
 import java.io.File
 import java.io.IOException
@@ -313,7 +314,7 @@ internal object DiPlayUpdateClient {
             if (candidate.protocol != "https" || !approvedHost) {
                 throw IOException("Untrusted update redirect")
             }
-            var connection = if (android.os.Build.VERSION.SDK_INT < 22) {
+            var connection = if (realSdkInt() < 22) {
                 legacyHttp.open(candidate) as HttpsURLConnection
             } else {
                 candidate.openConnection() as HttpsURLConnection
@@ -326,7 +327,7 @@ internal object DiPlayUpdateClient {
                 // OEM Android 5+ frameworks can also expose an SSLv3-only
                 // TLS fallback; retry that exact failure with bundled Conscrypt.
                 // Do not retry certificate, hostname, or other handshake errors.
-                if (android.os.Build.VERSION.SDK_INT < 22 || !isObsoleteSslv3Failure(failure)) {
+                if (realSdkInt() < 22 || !isObsoleteSslv3Failure(failure)) {
                     throw failure
                 }
                 android.util.Log.w("DiPlayUpdate", "System TLS offered only SSLv3; retrying TLS 1.2")

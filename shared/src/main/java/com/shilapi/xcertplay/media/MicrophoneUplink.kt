@@ -4,6 +4,7 @@ import android.media.AudioFormat as AndroidAudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
 import android.os.Build
+import com.shilapi.xcertplay.compat.realSdkInt
 import android.media.audiofx.AcousticEchoCanceler
 import android.media.audiofx.AudioEffect
 import android.media.audiofx.NoiseSuppressor
@@ -152,7 +153,7 @@ internal class MicrophoneUplink(
 
     private fun createRecorder(source: Int, channelMask: Int, bufferSize: Int): AudioRecord? {
         val recorder = try {
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+            if (realSdkInt() >= android.os.Build.VERSION_CODES.M) {
                 AudioRecord.Builder()
                     .setAudioSource(source)
                     .setAudioFormat(
@@ -271,7 +272,7 @@ internal class MicrophoneUplink(
         try {
             while (running.get()) {
                 stats.reading()
-                val count = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+                val count = if (realSdkInt() >= android.os.Build.VERSION_CODES.M) {
                     recorder.read(readBuffer, 0, readBuffer.size, AudioRecord.READ_BLOCKING)
                 } else {
                     recorder.read(readBuffer, 0, readBuffer.size)
@@ -371,7 +372,7 @@ internal class MicrophoneUplink(
         }
     }
 
-    private fun routeType(recorder: AudioRecord): Int? = if (Build.VERSION.SDK_INT >= 23)
+    private fun routeType(recorder: AudioRecord): Int? = if (realSdkInt() >= 23)
         runCatching { recorder.routedDevice?.type }.getOrNull() else null
 
     /** Capture can continue with the same recorder if the optional native processor stops working. */
@@ -487,7 +488,7 @@ internal class MicrophoneUplink(
  * timestamp when the platform has one, otherwise assumes the newest sample arrived [FALLBACK_LATENCY_NS] ago.
  */
 internal class CaptureClock(private val sampleRate: Int) {
-    private val timestamp = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) android.media.AudioTimestamp() else null
+    private val timestamp = if (realSdkInt() >= android.os.Build.VERSION_CODES.N) android.media.AudioTimestamp() else null
     private var samplesRead = 0L
     private var lastReadSamples = 0
     private var lastReadEndNs = 0L
@@ -497,7 +498,7 @@ internal class CaptureClock(private val sampleRate: Int) {
         lastReadSamples = samples
         val now = System.nanoTime()
         val ts = timestamp
-        val stamped = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N && ts != null) {
+        val stamped = if (realSdkInt() >= android.os.Build.VERSION_CODES.N && ts != null) {
             runCatching {
                 recorder.getTimestamp(ts, android.media.AudioTimestamp.TIMEBASE_MONOTONIC) == AudioRecord.SUCCESS
             }.getOrDefault(false)

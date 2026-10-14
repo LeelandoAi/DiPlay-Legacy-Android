@@ -3,6 +3,7 @@ package com.shilapi.xcertplay.transport
 import android.hardware.usb.UsbDeviceConnection
 import android.hardware.usb.UsbRequest
 import android.os.Build
+import com.shilapi.xcertplay.compat.realSdkInt
 import java.io.Closeable
 import java.nio.ByteBuffer
 import java.util.concurrent.ExecutionException
@@ -33,7 +34,7 @@ internal class UsbRequestCompat : Closeable {
     fun requestWait(connection: UsbDeviceConnection, timeoutMillis: Long): UsbRequest? {
         if (closed) return null
         val timeout = timeoutMillis.coerceAtLeast(1L)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        if (realSdkInt() >= Build.VERSION_CODES.O) {
             return connection.requestWait(timeout)
         }
 
