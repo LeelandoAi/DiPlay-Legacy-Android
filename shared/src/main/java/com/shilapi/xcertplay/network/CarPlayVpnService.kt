@@ -42,6 +42,8 @@ class CarPlayVpnService : VpnService() {
     sealed class AttachResult {
         data object Started : AttachResult()
         data object AlreadyStarted : AttachResult()
+        /** Existing TUN reused; NCM bridge swapped to the new NCM without re-establishing VPN. */
+        data object Reused : AttachResult()
         data class Failed(val message: String) : AttachResult()
     }
 
@@ -100,6 +102,34 @@ class CarPlayVpnService : VpnService() {
         listener: AirPlaySessionListener,
         media: AirPlayMediaHandler,
     ): AttachResult {
+        // Issue: on 4.4-framework ROMs (e.g. Allwinner T3) the framework's establish()
+        // adds a UID fwmark rule to netd, but closing the TUN does NOT remove it.
+        // If a previous attempt failed at AirPlay TCP (iPhone never connected), the
+        // VPN itself is healthy — tearing it down leaks the fwmark rule and the
+        // retry's establish() is rejected with "Invalid argument". Reuse the TUN
+        // instead of re-establishing; the rest of the flow (bridge, listener,
+        // Bonjour) runs normally with the new NCM/attachment.
+        // Note: detach() keeps the TUN open (active=false but tun != null), so
+        // check tun != null, not just active.
+        var reuseTun = false
+        val existingTun = tun
+        if (existingTun != null) {
+            val canReuse = if (active.get()) {
+                attachment?.address?.hostAddress == linkLocal
+            } else {
+                // Detached but TUN kept alive for reuse. The link-local is the
+                // same for all wired attempts (config.linkLocal).
+                true
+            }
+            if (canReuse) {
+                reuseTun = true
+                runCatching { listener.onDebugLog("wired VPN TUN reused (no re-establish, fwmark rule preserved)") }
+            } else {
+                Log.i(TAG, "replacing stale NCM/VPN attachment (TUN not reusable)")
+                existingTun.close()
+                tun = null
+            }
+        }
         if (active.get()) {
             Log.i(TAG, "replacing stale NCM/VPN attachment")
             releaseLocked()
@@ -132,7 +162,9 @@ class CarPlayVpnService : VpnService() {
             // Only the IPv6 link-local route above is installed; no default route, DNS,
             // Wi-Fi internet or mobile internet is captured.
             attachStage = "VPN establish"
-            val tunFd = try {
+            val tunFd = if (reuseTun) {
+                existingTun!!
+            } else try {
                 builder.establish()
             } catch (error: Exception) {
                 if (!perAppVpnUnsupported && isUidRuleUnsupported(error)) {
@@ -285,7 +317,7 @@ class CarPlayVpnService : VpnService() {
                 Log.w(TAG, "wired mDNS unicast responder setup failed", error)
                 runCatching { listener.onDebugLog("wired mDNS unicast responder setup failed: ${error.message}") }
             }
-            AttachResult.Started
+            if (reuseTun) AttachResult.Reused else AttachResult.Started
         } catch (error: Exception) {
             lastAttachFailure = "$attachStage: ${attachFailure(error)}"
             Log.e(TAG, "wired VPN/NCM attach failed: $lastAttachFailure", error)
@@ -429,7 +461,11 @@ class CarPlayVpnService : VpnService() {
     }
 
     override fun onDestroy() {
-        detach()
+        releaseLocked()
+        // releaseLocked keeps the TUN open for reuse; close it here since
+        // the Service is really being destroyed.
+        tun?.close()
+        tun = null
         super.onDestroy()
     }
 
@@ -600,8 +636,13 @@ class CarPlayVpnService : VpnService() {
         bridge = null
         runCatching { wiredBonjour?.close() }
         wiredBonjour = null
-        tun?.close()
-        tun = null
+        // Keep ONLY the TUN open for reuse: on 4.4-framework ROMs the
+        // framework's establish() adds a UID fwmark rule to netd, but closing
+        // the TUN does NOT remove it. If a retry re-establishes, netd rejects
+        // the duplicate rule with "Invalid argument". The next attach()
+        // reuses the TUN (skipping establish) and rebuilds the bridge,
+        // listener and Bonjour normally. The TUN is closed in onDestroy()
+        // when the Service is really being destroyed.
     }
 
     companion object {

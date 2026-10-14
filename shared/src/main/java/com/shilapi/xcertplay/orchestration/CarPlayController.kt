@@ -2842,6 +2842,12 @@ class CarPlayController(
                 debugLog("wired VPN/NCM transport attach result=started")
                 null
             }
+            CarPlayVpnService.AttachResult.Reused -> {
+                // TUN reused, NCM bridge swapped. The old NCM is closed by the
+                // service when the bridge was swapped; do not close the new one.
+                debugLog("wired VPN/NCM transport attach result=reused (TUN kept, fwmark preserved)")
+                null
+            }
             CarPlayVpnService.AttachResult.AlreadyStarted -> {
                 debugLog("wired VPN/NCM transport attach result=already-started")
                 ncm.close()
