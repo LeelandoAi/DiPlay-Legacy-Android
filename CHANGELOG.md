@@ -1,3 +1,11 @@
+# DiPlay 0.2.60 — 2026-10-14
+
+- Send an additional multicast mDNS response for non-QU wired queries while preserving the unicast path and unicast-only QU responses.
+- Bound crash-trace cause traversal to prevent cyclic or deep cause chains from breaking crash reporting.
+- Add regression coverage for wired mDNS response routing/checksums and bounded crash traces.
+
+See [v0.2.60 release notes](docs/RELEASE-NOTES-0.2.60.md) for validation and device-testing limits.
+
 # DiPlay 0.2.59 — 2026-10-14
 
 - Select real Android API branches on legacy head units for USB, VPN, Bluetooth, media, settings and APK installation.
