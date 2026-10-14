@@ -17,13 +17,18 @@ internal class SessionLogFile(val file: File) : Closeable {
     }
     fun append(line: String) = synchronized(lock) {
         if (closed) return@synchronized
-        val safe = DiagnosticRedactor.redact(line) ?: return@synchronized
+        // Crash records arrive as one multi-line entry; redact line by line so the
+        // stack trace survives instead of being dropped as a whole.
+        val safeLines = DiagnosticRedactor.redactLines(line)
+        if (safeLines.isEmpty()) return@synchronized
         runCatching {
-            if (file.length() > MAX_BYTES) {
-                rotate()
-                file.writeText("")
+            for (safe in safeLines) {
+                if (file.length() > MAX_BYTES) {
+                    rotate()
+                    file.writeText("")
+                }
+                file.appendText(safe + "\n")
             }
-            file.appendText(safe + "\n")
         }
         Unit
     }
