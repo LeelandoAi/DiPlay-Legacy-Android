@@ -1198,6 +1198,21 @@ class CarPlayController(
             // Issue #117: adapter present but switched off 鈥?the iPhone can never discover
             // the head unit, so fail fast with an actionable message instead of the 60s
             // Wi-Fi wait ending in "Timed out waiting for iPhone to connect over Wi-Fi hotspot".
+            // Issue #165: try enabling Bluetooth first. The old code threw here
+            // without ever calling enable(), so head units whose Bluetooth
+            // starts off (e.g. Rockchip rkpx3, no BT switch in Android
+            // settings) could never get past this check.
+            if (!hybridBt.isEnabled()) {
+                runCatching { hybridBt.enable() }
+                val enableDeadline = System.currentTimeMillis() + 3000L
+                while (!hybridBt.isEnabled() && System.currentTimeMillis() < enableDeadline) {
+                    try {
+                        Thread.sleep(200L)
+                    } catch (_: InterruptedException) {
+                        break
+                    }
+                }
+            }
             if (!hybridBt.isEnabled()) {
                 throw IOException(
                     "Bluetooth is turned off on this head unit; wireless CarPlay requires Bluetooth " +
