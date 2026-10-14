@@ -325,6 +325,9 @@ class CarPlayController(
             // Issue #95: wired first-TCP watchdog 鈥?a session only becomes active after the
             // iPhone opened the AirPlay TCP connection and completed the handshake.
             if (config.transport != CarPlayTransport.WIRELESS) wiredTcpArrived.set(true)
+            if (config.transport == CarPlayTransport.WIRELESS) {
+                wirelessChain(12, "SUCCESS: AirPlay session active")
+            }
             debugLog(
                 "AirPlay session active controller=${session.controllerId ?: "unknown"} " +
                     "peer=${session.host}",
@@ -1189,6 +1192,7 @@ class CarPlayController(
             // Bluetooth only works through the vendor Bluetooth service while
             // getDefaultAdapter() reports null or disabled.
             val hybridBt = CarPlayBluetoothManager.get(appContext)
+            wirelessChain(1, "Bluetooth adapter supported")
             if (!hybridBt.isSupported()) {
                 throw IOException(
                     "No Bluetooth adapter on this head unit; wireless CarPlay requires Bluetooth " +
@@ -1213,6 +1217,7 @@ class CarPlayController(
                     }
                 }
             }
+            wirelessChain(2, "Bluetooth enabled")
             if (!hybridBt.isEnabled()) {
                 throw IOException(
                     "Bluetooth is turned off on this head unit; wireless CarPlay requires Bluetooth " +
@@ -1250,6 +1255,7 @@ class CarPlayController(
             firstTcpWatchdog = watchdog
             val mfi = mfiSession?.client
                 ?: throw IOException("MFi coprocessor client is unavailable")
+            wirelessChain(5, "starting hotspot")
             val hotspotInfo = startWirelessHotspot(generation)
             if (isStaleWirelessRun(generation)) {
                 return
@@ -1275,6 +1281,7 @@ class CarPlayController(
             val deviceIdentifier = hotspotInfo.bssid
                 ?.takeUnless { it.equals(ADAPTER_ADDRESS_PLACEHOLDER, ignoreCase = true) }
                 ?: airPlayConfig.deviceId
+            wirelessChain(6, "hotspot ready backend=${hotspotInfo.backend.label} iface=${hotspotInfo.interfaceName ?: "unknown"}")
             debugLog(
                 "wireless hotspot backend=${hotspotInfo.backend.label} " +
                     "iface=${hotspotInfo.interfaceName ?: "unknown"} " +
@@ -1361,7 +1368,7 @@ class CarPlayController(
                         additionalBindAddresses = hotspotInfo.hostAddresses.filter { it != hostAddress },
                     )
                 ) {
-                    is CarPlayVpnService.AttachResult.Started -> Unit
+                    is CarPlayVpnService.AttachResult.Started -> wirelessChain(11, "wireless AirPlay transport attached, waiting for iPhone TCP")
                     CarPlayVpnService.AttachResult.AlreadyStarted ->
                         throw IOException("Wireless AirPlay transport is already attached")
                     CarPlayVpnService.AttachResult.Reused -> Unit
@@ -1443,6 +1450,7 @@ class CarPlayController(
             }
             startedBonjour = bonjourClient
             diagnostics.start()
+            wirelessChain(7, "Bonjour/mDNS advertisement started")
             debugLog("wireless Bonjour services started mode=interface iface=${hotspotInfo.interfaceName ?: "unknown"}")
             if (isStaleWirelessRun(generation)) {
                 return
@@ -1474,6 +1482,7 @@ class CarPlayController(
                     try {
                         onStatus(CarPlayStatus.ConnectingBluetooth)
                         stage = "Bluetooth RFCOMM connection"
+                        wirelessChain(3, "RFCOMM connecting to iPhone (attempt $attempt/$maxAttempts)")
                         debugLog("wireless RFCOMM connecting (attempt $attempt/$maxAttempts) address=${device.address} uuid=$IAP2_IPHONE_UUID")
                         logBluetoothConnectionSnapshot(device, "before-connect-$attempt")
                         val currentStream = hybridAdapter.openRfcommStream(device.address, IAP2_IPHONE_UUID)
@@ -1495,6 +1504,7 @@ class CarPlayController(
                             csm = currentChannel
                             channel = currentChannel
                         }
+                        wirelessChain(4, "iAP2 CSM channel opened over RFCOMM")
                         debugLog("wireless iAP2 CSM channel opened over RFCOMM")
                         if (isStaleWirelessRun(generation)) return
 
@@ -1667,6 +1677,7 @@ class CarPlayController(
             return false
         }
         wirelessTunnelChannel = channel
+        wirelessChain(8, "iAP2 tunnel opened (iPhone on hotspot WiFi)")
         val generation = wirelessGeneration.get()
         debugLog(
             "wireless iAP2 runtime tunnel control starting " +
@@ -1786,6 +1797,7 @@ class CarPlayController(
             wirelessTunnelReady.set(true)
         }
         wirelessConnectionProof.authenticated(generation)
+        wirelessChain(9, "iAP2 tunnel ready (pairing/auth done)")
         debugLog("wireless iAP2 tunnel ready; handoffRequested=${wirelessHandoffRequested.get()}")
         maybeCompleteWirelessHandoff()
     }
@@ -1806,6 +1818,7 @@ class CarPlayController(
                     // A queued completion must not close a replacement generation's bootstrap.
                     if (closed || phase != Phase.WIRELESS || generation != wirelessGeneration.get() ||
                         wirelessFailureReported.get() || !wirelessTunnelReady.get()) return@Thread
+                    wirelessChain(10, "wireless handoff complete, Bluetooth bootstrap closing")
                     debugLog("wireless handoff ready; closing Bluetooth bootstrap transport")
                     closeBluetoothBootstrapTransport()
                     onStatus(CarPlayStatus.WirelessActive, generation)
@@ -2997,6 +3010,13 @@ class CarPlayController(
      */
     private fun wiredChain(step: Int, message: String) {
         debugLog("WIRED-CHAIN [$step/16] $message")
+    }
+
+    /**
+     * 无线全链路打点：从蓝牙到 AirPlay 会话共 12 步，统一前缀方便 grep。
+     */
+    private fun wirelessChain(step: Int, message: String) {
+        debugLog("WIRELESS-CHAIN [$step/12] $message")
     }
 
     private fun debugLog(message: String) {
