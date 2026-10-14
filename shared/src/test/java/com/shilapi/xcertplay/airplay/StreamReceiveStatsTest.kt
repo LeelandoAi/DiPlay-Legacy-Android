@@ -76,9 +76,21 @@ class StreamReceiveStatsTest {
         stats.processed()
         clock = 5_000_000_000L
         stats.flush()
-        assertTrue(output.last().endsWith(" decryptAvgUs=1250 decryptMaxUs=2000 decryptMBps=300"))
+        assertTrue(output.last().endsWith(" decryptAvgUs=1250 decryptMaxUs=2000 decryptMBps=300.0"))
         clock = 10_000_000_000L
         stats.flush()
         assertTrue(!output.last().contains("decrypt"))
+    }
+
+    @Test fun decryptThroughputBelowOneMBpsIsNotTruncatedToZero() {
+        var clock = 0L
+        val output = mutableListOf<String>()
+        val stats = StreamReceiveStats("video", output::add) { clock }
+        stats.received(1_000)
+        stats.decrypted(2_000_000, 500)
+        stats.processed()
+        clock = 5_000_000_000L
+        stats.flush()
+        assertTrue(output.last().endsWith(" decryptAvgUs=2000 decryptMaxUs=2000 decryptMBps=0.2"))
     }
 }
