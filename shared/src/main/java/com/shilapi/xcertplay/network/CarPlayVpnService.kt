@@ -359,6 +359,47 @@ class CarPlayVpnService : VpnService() {
         }
     }
 
+    /**
+     * Issue #155/#123: the iPhone's TCP SYNs arrive over NCM and are injected into the
+     * TUN, but the kernel never answers on some 4.4 kernels. Snapshot the kernel's TCP
+     * table for the AirPlay port: a SYN_RECV entry proves the kernel received the SYN
+     * and emitted SYN-ACK (so the break is on the SYN-ACK return path through the
+     * bridge); no SYN_RECV with injectedTcp > 0 proves the injected packets never
+     * reached the kernel TCP stack.
+     */
+    fun tunTcpSnapshot(): String {
+        val port = boundPort() ?: return "tun tcp6 snapshot unavailable: no bound port"
+        val portHex = port.toString(16).uppercase().padStart(4, '0')
+        val injected = bridge?.injectedTcpPackets?.get() ?: -1
+        var listen = 0
+        var synRecv = 0
+        var established = 0
+        var other = 0
+        runCatching {
+            java.io.File("/proc/net/tcp6").bufferedReader().use { reader ->
+                var line = reader.readLine()
+                while (line != null) {
+                    // Columns: sl | local_address | rem_address | st | ...
+                    // st: 01=ESTABLISHED 03=SYN_RECV 0A=LISTEN
+                    val fields = line.trim().split(Regex("\\s+"))
+                    if (fields.size >= 4 &&
+                        fields[1].endsWith(":$portHex", ignoreCase = true)
+                    ) {
+                        when {
+                            fields[3].equals("0A", ignoreCase = true) -> listen++
+                            fields[3].equals("03", ignoreCase = true) -> synRecv++
+                            fields[3].equals("01", ignoreCase = true) -> established++
+                            else -> other++
+                        }
+                    }
+                    line = reader.readLine()
+                }
+            }
+        }
+        return "tun tcp6 port=$port listen=$listen synRecv=$synRecv " +
+            "established=$established other=$other injectedTcp=$injected"
+    }
+
     override fun onDestroy() {
         detach()
         super.onDestroy()

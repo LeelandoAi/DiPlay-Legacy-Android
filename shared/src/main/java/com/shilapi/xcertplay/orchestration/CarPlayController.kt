@@ -2361,8 +2361,14 @@ class CarPlayController(
                         CarPlayStatus.Failed("Wired CarPlay peer silent; resetting link")
                     // Issue #95: iPhone alive on iAP2 but never opened the AirPlay TCP
                     // connection — fail fast instead of idling until USB wedges.
-                    Iap2WiredControlTerminal.NO_AIRPLAY_TCP ->
+                    // Issue #155/#123: capture the kernel TCP-table snapshot here so the
+                    // report shows whether injected SYNs ever reached the TCP stack.
+                    Iap2WiredControlTerminal.NO_AIRPLAY_TCP -> {
+                        vpnService?.let { service ->
+                            debugLog("wired ${service.tunTcpSnapshot()}")
+                        }
                         CarPlayStatus.Failed("No AirPlay TCP after CarPlay StartSession; resetting link")
+                    }
                 },
             )
         } catch (error: Throwable) {

@@ -11,6 +11,7 @@ import java.io.IOException
 import java.net.Inet6Address
 import java.net.InetAddress
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.locks.LockSupport
 
 /**
@@ -68,6 +69,14 @@ class Ipv6NcmBridge(
     private var outboundLogBudget = 24
     /** Issue #148: keep wired mDNS answers visible without spamming the report. */
     private var mdnsAnswerLogBudget = 6
+    /**
+     * Issue #155/#123: the iPhone's TCP SYNs reach the NCM bridge but the kernel never
+     * answers on some 4.4 kernels. Count TCP packets written into the TUN so a later
+     * report can tell "bridge never wrote" from "kernel dropped / never answered".
+     */
+    val injectedTcpPackets = AtomicInteger(0)
+    /** Issue #123: confirm each sampled SYN actually made it into the TUN. */
+    private var tunInjectLogBudget = 8
     @Volatile
     private var lastNaTimeNanos = 0L
     private val running = AtomicBoolean(false)
@@ -179,7 +188,22 @@ class Ipv6NcmBridge(
                     reportInboundBudget--
                     runCatching { onDebugLog("ncm inbound diag ${frame.diagnosticSummary(ipv6.payloadOffset)}") }
                 }
+                val isTcp = inboundNextHeader == 6
+                if (isTcp) injectedTcpPackets.incrementAndGet()
                 output.write(frame, ipv6.payloadOffset, ipv6.payloadLength)
+                if (isTcp && tunInjectLogBudget > 0) {
+                    // Issue #123: prove the SYN crossed into the kernel's TUN. A throw
+                    // above surfaces through onError instead; reaching here means the
+                    // write completed.
+                    tunInjectLogBudget--
+                    val dstPort = if (ipv6.payloadLength >= 44) {
+                        ((frame[ipv6.payloadOffset + 42].toInt() and 0xff) shl 8) or
+                            (frame[ipv6.payloadOffset + 43].toInt() and 0xff)
+                    } else -1
+                    runCatching {
+                        onDebugLog("ncm tun inject tcp bytes=${ipv6.payloadLength} dstPort=$dstPort ok")
+                    }
+                }
             }
         } catch (error: IOException) {
             if (running.get()) onError(error)
