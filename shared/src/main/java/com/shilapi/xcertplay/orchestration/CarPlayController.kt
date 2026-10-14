@@ -2358,7 +2358,10 @@ class CarPlayController(
                     // Issue #84/#61: the iPhone went quiet long after StartSession 鈥?the old
                     // code spun here forever on "鎺у埗閫氶亾杩愯涓?. Fail loudly so the existing
                     // reconnect path rebuilds the link instead.
-                    Iap2WiredControlTerminal.PEER_SILENT ->`r`n                        CarPlayStatus.Failed("Wired CarPlay peer silent; resetting link")`r`n                    Iap2WiredControlTerminal.Reused ->`r`n                        CarPlayStatus.Connected
+                    Iap2WiredControlTerminal.PEER_SILENT ->
+                        CarPlayStatus.Failed("Wired CarPlay peer silent; resetting link")
+                    Iap2WiredControlTerminal.Reused ->
+                        CarPlayStatus.Connected
                     // Issue #95: iPhone alive on iAP2 but never opened the AirPlay TCP
                     // connection 鈥?fail fast instead of idling until USB wedges.
                     // Issue #155/#123: capture the kernel TCP-table snapshot here so the
@@ -3108,4 +3111,5 @@ class CarPlayController(
         private val BLUETOOTH_ADDRESS = Regex("^[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}$")
     }
 }
+
 
