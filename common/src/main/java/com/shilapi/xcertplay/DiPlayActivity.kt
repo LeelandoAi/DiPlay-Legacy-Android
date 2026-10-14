@@ -4391,10 +4391,23 @@ class DiPlayActivity : ComponentActivity() {
         }
         val body = column().apply { setPadding(dp(24), dp(12), dp(24), dp(12)) }
         body.addView(label(getString(R.string.diagnostic_report_copy_hint), 14, MUTED))
+        body.addView(button(getString(R.string.copy_all), false) {
+            // Long-press text selection (setTextIsSelectable) crashes on some API 17/19 head
+            // units when the selection ActionMode starts, so copy via an explicit button
+            // instead of relying on the selection machinery.
+            val clipboard = if (realSdkInt() >= Build.VERSION_CODES.M) {
+                getSystemService(android.content.ClipboardManager::class.java)
+            } else {
+                @Suppress("DEPRECATION")
+                getSystemService(Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+            }
+            clipboard?.setPrimaryClip(
+                android.content.ClipData.newPlainText(getString(R.string.view_diagnostic_report), report))
+            toast(getString(R.string.diagnostic_report_copied))
+        })
         try {
             body.addView(label(preview, 13, TEXT).apply {
                 typeface = Typeface.MONOSPACE
-                setTextIsSelectable(true)
             })
         } catch (error: Throwable) {
             // Even the preview can blow the layout budget on very weak devices; fall back to
