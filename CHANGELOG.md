@@ -1,3 +1,13 @@
+# DiPlay 0.2.59 — 2026-10-14
+
+- Select real Android API branches on legacy head units for USB, VPN, Bluetooth, media, settings and APK installation.
+- Correct wired AirPlay IPv6 interface-scope lookup, answer mDNS service enumeration, and reuse the VPN TUN during retries to avoid stale Android 4.4 fwmark rules.
+- Try bundled Conscrypt frame decryption on Android 4.4 while retaining the existing fallback.
+- Repair legacy APK installation and settings rebuild crashes; add a diagnostic-report copy button and preserve redacted crash traces line by line.
+- Fix release compilation and handling of the reused wired transport state.
+
+See [v0.2.59 release notes](docs/RELEASE-NOTES-0.2.59.md) for package details and validation limits.
+
 # DiPlay 0.2.46 — 2026-10-13
 
 - Bring in the latest AirPlay wired listener interface-scoped binding and kernel LISTEN diagnosis.
