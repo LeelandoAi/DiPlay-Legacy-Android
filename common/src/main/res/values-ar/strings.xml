@@ -552,6 +552,8 @@
     <string name="diagnostic_report_saved_in_app">تم حفظ التقرير بشكل خاص داخل DiPlay لعدم توفر موقع حفظ عام. يمكنك مشاركته أو عرضه هنا. لا يتم إرسال شيء تلقائياً.</string>
     <string name="diagnostic_report_saved_to_path">تم حفظ التقرير في:\n%1$s\n\nيمكنك أيضاً مشاركته أو عرضه هنا. لا يتم إرسال شيء تلقائياً.</string>
     <string name="view_diagnostic_report">عرض التقرير</string>
+    <string name="view_log">View log</string>
+    <string name="loading_log">Loading log…</string>
     <string name="diagnostic_report_copy_hint">اضغط على «نسخ الكل» لنسخ التقرير كاملاً إلى الحافظة. يمكنك استخدام ذلك إذا لم يتوفر تطبيق للمشاركة.</string>
     <string name="copy_all">نسخ الكل</string>
     <string name="diagnostic_report_copied">تم نسخ التقرير كاملاً إلى الحافظة.</string>

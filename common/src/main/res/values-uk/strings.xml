@@ -564,6 +564,8 @@
     <string name="diagnostic_report_saved_in_app">Звіт збережено приватно в DiPlay, оскільки загальнодоступне місце збереження недоступне. Поділіться ним або перегляньте його тут. Нічого не надсилається автоматично.</string>
     <string name="diagnostic_report_saved_to_path">Звіт збережено в:\n%1$s\n\nВи також можете поділитися ним або переглянути його тут. Нічого не надсилається автоматично.</string>
     <string name="view_diagnostic_report">Переглянути звіт</string>
+    <string name="view_log">View log</string>
+    <string name="loading_log">Loading log…</string>
     <string name="diagnostic_report_copy_hint">Натисніть «Копіювати все», щоб скопіювати повний звіт у буфер обміну. Це можна використати, якщо немає застосунку для надсилання.</string>
     <string name="copy_all">Копіювати все</string>
     <string name="diagnostic_report_copied">Повний звіт скопійовано в буфер обміну.</string>

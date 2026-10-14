@@ -579,6 +579,8 @@
     <string name="diagnostic_report_saved_in_app">由於公開儲存位置無法使用，報告已私密儲存到 DiPlay。您可以在此分享或檢視報告。不會自動傳送任何內容。</string>
     <string name="diagnostic_report_saved_to_path">報告已儲存到：\n%1$s\n\n您也可以在此分享或檢視報告。不會自動傳送任何內容。</string>
     <string name="view_diagnostic_report">檢視報告</string>
+    <string name="view_log">查看日誌</string>
+    <string name="loading_log">正在載入日誌…</string>
     <string name="diagnostic_report_copy_hint">點「全部複製」即可把全文複製到剪貼簿。如果沒有可用的分享 App，可以使用此方式。</string>
     <string name="copy_all">全部複製</string>
     <string name="diagnostic_report_copied">全文已複製到剪貼簿。</string>

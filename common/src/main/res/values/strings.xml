@@ -637,6 +637,8 @@
     <string name="diagnostic_report_saved_in_app">Your report was saved privately in DiPlay because a public save location was unavailable. Share it or view it here. Nothing is sent automatically.</string>
     <string name="diagnostic_report_saved_to_path">Your report was saved to:\n%1$s\n\nYou can also share it or view it here. Nothing is sent automatically.</string>
     <string name="view_diagnostic_report">View report</string>
+    <string name="view_log">View log</string>
+    <string name="loading_log">Loading log…</string>
     <string name="diagnostic_report_copy_hint">Tap "Copy all" to copy the full report to the clipboard. Use this if no sharing app is available.</string>
     <string name="copy_all">Copy all</string>
     <string name="diagnostic_report_copied">Full report copied to the clipboard.</string>

@@ -552,6 +552,8 @@
     <string name="diagnostic_report_saved_in_app">El informe se guardó de forma privada en DiPlay porque no había una ubicación pública disponible. Compártelo o míralo aquí. No se envía nada automáticamente.</string>
     <string name="diagnostic_report_saved_to_path">El informe se guardó en:\n%1$s\n\nTambién puedes compartirlo o verlo aquí. No se envía nada automáticamente.</string>
     <string name="view_diagnostic_report">Ver informe</string>
+    <string name="view_log">View log</string>
+    <string name="loading_log">Loading log…</string>
     <string name="diagnostic_report_copy_hint">Toca «Copiar todo» para copiar el informe completo al portapapeles. Puedes usar esta opción si no hay una aplicación para compartir.</string>
     <string name="copy_all">Copiar todo</string>
     <string name="diagnostic_report_copied">Informe completo copiado al portapapeles.</string>
