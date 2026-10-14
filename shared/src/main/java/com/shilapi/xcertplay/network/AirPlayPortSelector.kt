@@ -24,6 +24,7 @@ object AirPlayPortSelector {
         addresses: List<InetAddress>,
         preferredPort: Int,
         fallbackPorts: Iterable<Int> = FALLBACK_PORTS,
+        reuseAddress: Boolean = false,
         onFallback: (Int, Int) -> Unit = { _, _ -> },
     ): List<ServerSocket> {
         require(addresses.isNotEmpty()) { "At least one listener address is required" }
@@ -32,7 +33,7 @@ object AirPlayPortSelector {
             val servers = mutableListOf<ServerSocket>()
             try {
                 for (address in addresses.distinct()) {
-                    servers.add(bindPort(address, servers.firstOrNull()?.localPort ?: candidate))
+                    servers.add(bindPort(address, servers.firstOrNull()?.localPort ?: candidate, reuseAddress))
                 }
             } catch (error: Throwable) {
                 servers.forEach { closeAfterFailure(it, error) }
@@ -55,28 +56,33 @@ object AirPlayPortSelector {
         address: InetAddress,
         preferredPort: Int,
         fallbackPorts: Iterable<Int> = FALLBACK_PORTS,
+        reuseAddress: Boolean = false,
         onFallback: (busyPort: Int, boundPort: Int) -> Unit = { _, _ -> },
     ): ServerSocket {
-        tryBind(address, preferredPort)?.let { return it }
+        tryBind(address, preferredPort, reuseAddress)?.let { return it }
         for (port in fallbackPorts) {
             if (port == preferredPort) continue
-            tryBind(address, port)?.let { server ->
+            tryBind(address, port, reuseAddress)?.let { server ->
                 return reportFallback(server, preferredPort, onFallback)
             }
         }
-        return reportFallback(bindPort(address, 0), preferredPort, onFallback)
+        return reportFallback(bindPort(address, 0, reuseAddress), preferredPort, onFallback)
     }
 
-    private fun tryBind(address: InetAddress, port: Int): ServerSocket? = try {
-        bindPort(address, port)
+    private fun tryBind(address: InetAddress, port: Int, reuseAddress: Boolean = false): ServerSocket? = try {
+        bindPort(address, port, reuseAddress)
     } catch (error: IOException) {
         if (error is BindException || isAddressInUse(error)) null else throw error
     }
 
-    private fun bindPort(address: InetAddress, port: Int): ServerSocket {
+    private fun bindPort(address: InetAddress, port: Int, reuseAddress: Boolean = false): ServerSocket {
         if (port == 0) return AirPlaySocketBinder.serverAt(address, "AirPlay control")
         val server = ServerSocket()
         return try {
+            // Issue #152: the wired listener also binds the IPv6 wildcard as a fallback
+            // for kernels whose scope matching drops the SYN. Wildcard + specific binds
+            // on one port only coexist when both sockets set SO_REUSEADDR.
+            server.reuseAddress = reuseAddress
             server.bind(InetSocketAddress(address, port))
             server
         } catch (error: Throwable) {

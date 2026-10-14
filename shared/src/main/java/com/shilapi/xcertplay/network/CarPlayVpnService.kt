@@ -23,6 +23,7 @@ import com.shilapi.xcertplay.transport.NcmUsbBridge
 import java.io.IOException
 import java.net.Inet6Address
 import java.net.InetAddress
+import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
 import java.util.concurrent.atomic.AtomicBoolean
@@ -207,11 +208,38 @@ class CarPlayVpnService : VpnService() {
             startAirPlayServer(
                 generation,
                 AirPlayAttachment(scopedAddress, config, identity, pairings, mfi, listener, media),
+                listenerReuseAddress = true,
             )
             runCatching { listener.onDebugLog("wired AirPlay listener bound port=${boundPort()}") }
             boundPort()?.let { port ->
                 runCatching { listener.onDebugLog("wired airplay listen kernel-check: ${verifyTcp6Listen(port)}") }
             }
+            // Issue #152: best-effort extra listener on the IPv6 wildcard of the same
+            // link. On kernels whose scope matching drops the SYN addressed to the
+            // scoped link-local listener, the wildcard socket can still catch it.
+            // Best-effort only: a failure here must never break the attach that
+            // already succeeded. The primary socket above sets SO_REUSEADDR so the
+            // wildcard bind can coexist on the same port.
+            runCatching {
+                val wildcard = AirPlaySocketBinder.wildcard(scopedAddress)
+                val port = boundPort()
+                if (wildcard != null && wildcard != scopedAddress && port != null) {
+                    val extra = ServerSocket().apply {
+                        reuseAddress = true
+                        bind(InetSocketAddress(wildcard, port))
+                    }
+                    additionalServers = additionalServers + extra
+                    runCatching {
+                        listener.onDebugLog(
+                            "airplay listener ready family=IPv6 port=${extra.localPort} wildcard",
+                        )
+                    }
+                    Thread({ acceptLoop(generation, extra) }, "airplay-accept").apply {
+                        isDaemon = true
+                        start()
+                    }
+                }
+            }.onFailure { error -> Log.w(TAG, "wired wildcard AirPlay listener unavailable", error) }
             attachStage = "wired mDNS AirPlay advertisement"
             // Best-effort: if the advertisement fails, the attach still stands (the
             // iPhone may already know the endpoint); without it the iPhone keeps
@@ -408,14 +436,15 @@ class CarPlayVpnService : VpnService() {
     private fun startAirPlayServer(
         generation: Int,
         replacement: AirPlayAttachment,
+        listenerReuseAddress: Boolean = false,
     ) {
         val servers = if (replacement.additionalAddresses.isEmpty()) {
-            listOf(AirPlayPortSelector.bind(replacement.address, replacement.config.port) { busy, bound ->
+            listOf(AirPlayPortSelector.bind(replacement.address, replacement.config.port, reuseAddress = listenerReuseAddress) { busy, bound ->
                 Log.w(TAG, "AirPlay port $busy is in use; listening on $bound instead")
             })
         } else {
             AirPlayPortSelector.bindAll(listOf(replacement.address) + replacement.additionalAddresses,
-                replacement.config.port) { busy, bound ->
+                replacement.config.port, reuseAddress = listenerReuseAddress) { busy, bound ->
                 Log.w(TAG, "AirPlay port $busy is in use; listening on $bound instead")
             }
         }
