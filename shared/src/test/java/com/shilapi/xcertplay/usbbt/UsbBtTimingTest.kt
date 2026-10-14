@@ -16,7 +16,7 @@ class UsbBtTimingTest {
     fun successOnFirstAttempt() {
         val clock = FakeClock()
         val sleeps = mutableListOf<Long>()
-        val (result, timing) = UsbBtTiming.runTimed(
+        val (result, timing) = UsbBtTiming.runTimed<ByteArray>(
             name = "cmd",
             policy = UsbBtTiming.RetryPolicy(timeoutMs = 500, maxAttempts = 3, backoffBaseMs = 100),
             sleeper = { sleeps.add(it); clock.advance(it) },
@@ -34,7 +34,7 @@ class UsbBtTimingTest {
         val clock = FakeClock()
         val sleeps = mutableListOf<Long>()
         var calls = 0
-        val (result, timing) = UsbBtTiming.runTimed(
+        val (result, timing) = UsbBtTiming.runTimed<ByteArray>(
             name = "cmd",
             policy = UsbBtTiming.RetryPolicy(
                 timeoutMs = 500,
@@ -60,7 +60,7 @@ class UsbBtTimingTest {
     fun givesUpAfterMaxAttempts() {
         val clock = FakeClock()
         val sleeps = mutableListOf<Long>()
-        val (result, timing) = UsbBtTiming.runTimed(
+        val (result, timing) = UsbBtTiming.runTimed<ByteArray>(
             name = "cmd",
             policy = UsbBtTiming.RetryPolicy(timeoutMs = 500, maxAttempts = 2, backoffBaseMs = 50),
             sleeper = { sleeps.add(it); clock.advance(it) },

@@ -2,7 +2,6 @@ package com.shilapi.xcertplay.usbbt
 
 import android.content.Context
 import android.util.Log
-import androidx.core.content.edit
 
 /**
  * Persistent store for Bluetooth link keys (Phase 4).
@@ -29,7 +28,7 @@ class LinkKeyStore(appContext: Context) {
             return
         }
         val hex = linkKey.joinToString("") { "%02x".format(it) }
-        prefs.edit { putString(KEY_PREFIX + bdAddr.uppercase(), hex) }
+        prefs.edit().putString(KEY_PREFIX + bdAddr.uppercase(), hex).apply()
         Log.i(TAG, "link key stored for $bdAddr")
     }
 
@@ -44,7 +43,7 @@ class LinkKeyStore(appContext: Context) {
 
     /** Forget the link key for [bdAddr]. */
     fun forget(bdAddr: String) {
-        prefs.edit { remove(KEY_PREFIX + bdAddr.uppercase()) }
+        prefs.edit().remove(KEY_PREFIX + bdAddr.uppercase()).apply()
     }
 
     /** All stored peer addresses. */

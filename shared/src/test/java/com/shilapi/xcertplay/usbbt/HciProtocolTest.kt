@@ -88,7 +88,7 @@ class HciProtocolTest {
         val out = HciProtocol.encodeLocalName("DiPlay")
         assertEquals(248, out.size)
         assertEquals("DiPlay", out.copyOfRange(0, 6).toString(Charsets.UTF_8))
-        assertEquals(0, out[247])
+        assertEquals(0.toByte(), out[247])
         // Over-long names are truncated, never overflow.
         val long = HciProtocol.encodeLocalName("x".repeat(300))
         assertEquals(248, long.size)

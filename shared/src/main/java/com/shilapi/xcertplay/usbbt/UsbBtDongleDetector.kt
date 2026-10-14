@@ -113,7 +113,7 @@ class UsbBtDongleDetector(private val appContext: Context) {
     }
 
     private fun hasBluetoothClassCode(device: UsbDevice): Boolean {
-        if (isBluetoothClass(device.deviceClass, device.deviceSubClass, device.deviceProtocol)) {
+        if (isBluetoothClass(device.deviceClass, device.deviceSubclass, device.deviceProtocol)) {
             return true
         }
         for (i in 0 until device.interfaceCount) {
