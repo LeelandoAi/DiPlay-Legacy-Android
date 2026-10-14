@@ -1296,7 +1296,8 @@ class DiPlayActivity : ComponentActivity() {
             getString(R.string.diagnostics), R.drawable.ic_dp_diagnostics) { card ->
             // 查看日志按钮：在保存按钮上方，点击直接展示日志（无需先保存）。
             // 低配置车机生成报告会卡顿，按钮显示 loading 状态避免"卡死"错觉。
-            val viewLogButton = button(getString(R.string.view_log), false) {
+            val viewLogButton = button(getString(R.string.view_log), false) {}
+            viewLogButton.setOnClickListener {
                 viewLogButton.isEnabled = false
                 viewLogButton.text = getString(R.string.loading_log)
                 Thread({
@@ -4268,6 +4269,7 @@ class DiPlayActivity : ComponentActivity() {
 
     /** Builds the full diagnostic report text (used by view-log and export). */
     private fun buildDiagnosticReport(): String = buildString {
+        val appContext = applicationContext
         appendLine("DiPlay ${version()} · private beta diagnostic report")
         appendLine("Android ${Build.VERSION.RELEASE} / API ${Build.VERSION.SDK_INT}")
         appendLine("Head unit: ${Build.MANUFACTURER} ${Build.MODEL}")

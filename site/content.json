@@ -31,7 +31,8 @@
       "Fix connection-screen video-window checks on Android 4.2/4.3 to avoid calling an API 19 method.",
       "Include SPS/PPS parameters in the first H.264 frame on Android 4.2 for legacy decoders that ignore separate format parameters.",
       "Wireless startup attempts to turn on Bluetooth and waits up to 3 seconds; a clear error remains if it stays off.",
-      "Add 16-step wired and 12-step wireless connection diagnostics to locate failures from USB/Bluetooth to the AirPlay session."
+      "Add 16-step wired and 12-step wireless connection diagnostics to locate failures from USB/Bluetooth to the AirPlay session.",
+      "View diagnostic logs directly without saving a file first; show a loading state while the report is generated."
     ],
     "compat": "Before you try it",
     "compatText": "Refactored and maintained for legacy head units. Install over an existing version only when the package and signing certificate match. Upstream or Debug-signed versions may require reinstalling; save your settings and reports first.",
@@ -82,7 +83,8 @@
       "إصلاح فحص نافذة الفيديو في شاشة الاتصال على Android 4.2/4.3 لتجنب استدعاء طريقة تتطلب API 19.",
       "إضافة معلمات SPS/PPS إلى أول إطار H.264 على Android 4.2 لفك الترميز القديم الذي يتجاهل معلمات التنسيق المنفصلة.",
       "يحاول بدء الاتصال اللاسلكي تشغيل Bluetooth وينتظر حتى 3 ثوانٍ، مع رسالة واضحة إذا بقي متوقفاً.",
-      "إضافة تشخيص اتصال سلكي من 16 خطوة ولاسلكي من 12 خطوة لتحديد الفشل من USB وBluetooth إلى جلسة AirPlay."
+      "إضافة تشخيص اتصال سلكي من 16 خطوة ولاسلكي من 12 خطوة لتحديد الفشل من USB وBluetooth إلى جلسة AirPlay.",
+      "عرض سجلات التشخيص مباشرة دون حفظ ملف أولاً، مع حالة تحميل أثناء إنشاء التقرير."
     ],
     "compat": "قبل التجربة",
     "compatText": "نسخة تجريبية عامة غير معتمدة من Apple. تستخدم المصادقة هوية ملحق تجريبية مستخرجة من برنامج ثابت منشور، ولا يُضمن استمرار قبولها مستقبلاً. قد يستمر التقطّع أو عدم تطبيق حجم الأيقونات على بعض الشاشات. ابدأ بمعدل 30 إطاراً مع تعطيل HEVC، وجرّب دقة أقل عند الحاجة.",
@@ -133,7 +135,8 @@
       "Исправлена проверка видеоокна на экране подключения Android 4.2/4.3, исключён вызов метода API 19.",
       "Первый кадр H.264 на Android 4.2 содержит SPS/PPS для старых декодеров, игнорирующих отдельные параметры формата.",
       "Перед беспроводным запуском приложение пытается включить Bluetooth и ждёт до 3 секунд; при неудаче остаётся понятное сообщение.",
-      "Добавлена диагностика проводного подключения из 16 этапов и беспроводного из 12 этапов: от USB/Bluetooth до сеанса AirPlay."
+      "Добавлена диагностика проводного подключения из 16 этапов и беспроводного из 12 этапов: от USB/Bluetooth до сеанса AirPlay.",
+      "Просмотр диагностических журналов без предварительного сохранения файла; во время подготовки отчёта отображается загрузка."
     ],
     "compat": "Перед установкой",
     "compatText": "Предварительная версия для открытого тестирования, без сертификации Apple. Используется экспериментальная идентификация аксессуара из общедоступной прошивки; её принятие в будущем не гарантируется. На некоторых устройствах остаются рывки изображения или не применяется размер значков. Начните с 30 кадров/с и выключенного HEVC; при необходимости снизьте разрешение.",
@@ -184,7 +187,8 @@
       "Виправлено перевірку відеовікна на екрані підключення Android 4.2/4.3, усунуто виклик методу API 19.",
       "Перший кадр H.264 на Android 4.2 містить SPS/PPS для старих декодерів, які ігнорують окремі параметри формату.",
       "Перед бездротовим запуском застосунок намагається ввімкнути Bluetooth і чекає до 3 секунд; у разі невдачі залишається зрозуміле повідомлення.",
-      "Додано діагностику дротового підключення з 16 етапів і бездротового з 12 етапів: від USB/Bluetooth до сеансу AirPlay."
+      "Додано діагностику дротового підключення з 16 етапів і бездротового з 12 етапів: від USB/Bluetooth до сеансу AirPlay.",
+      "Перегляд діагностичних журналів без попереднього збереження файла; під час підготовки звіту відображається завантаження."
     ],
     "compat": "Перш ніж спробувати",
     "compatText": "Це відкрита попередня версія, а не продукт, сертифікований Apple. Автентифікація використовує експериментальну ідентичність аксесуара, відновлену з публічної прошивки; що вона працюватиме й надалі, не гарантовано. На деяких головних пристроях досі бувають ривки або не діє зміна розміру значків. Почніть із 30 кадрів/с і вимкненим HEVC; за потреби спробуйте нижчу роздільність.",
@@ -235,7 +239,8 @@
       "Corrige la comprobación de la ventana de vídeo al conectar en Android 4.2/4.3 para evitar llamar a un método de API 19.",
       "Incluye SPS/PPS en el primer fotograma H.264 en Android 4.2 para decodificadores antiguos que ignoran los parámetros de formato separados.",
       "El inicio inalámbrico intenta activar Bluetooth y espera hasta 3 segundos; mantiene un error claro si sigue apagado.",
-      "Añade diagnóstico de conexión por cable en 16 pasos e inalámbrica en 12 pasos, desde USB/Bluetooth hasta la sesión AirPlay."
+      "Añade diagnóstico de conexión por cable en 16 pasos e inalámbrica en 12 pasos, desde USB/Bluetooth hasta la sesión AirPlay.",
+      "Consulta los registros de diagnóstico sin guardar primero un archivo; muestra el estado de carga mientras se genera el informe."
     ],
     "compat": "Antes de probar",
     "compatText": "Versión preliminar pública sin certificación de Apple. Usa una identidad de accesorio experimental obtenida de firmware público; no se garantiza su aceptación futura. Algunos equipos aún presentan tirones o no aplican los cambios de tamaño de iconos. Empieza con 30 fps y HEVC desactivado; reduce la resolución si hace falta.",
@@ -286,7 +291,8 @@
       "修复 Android 4.2/4.3 连接界面的视频窗口检测，避免调用 API 19 方法而崩溃。",
       "Android 4.2 的 H.264 首帧补充 SPS/PPS 参数，兼容忽略独立格式参数的旧解码器。",
       "无线启动前尝试开启蓝牙并最多等待 3 秒；仍未开启时显示明确的失败提示。",
-      "新增有线 16 步、无线 12 步连接诊断，定位从 USB、蓝牙到 AirPlay 会话的连接断点。"
+      "新增有线 16 步、无线 12 步连接诊断，定位从 USB、蓝牙到 AirPlay 会话的连接断点。",
+      "诊断区可直接查看日志，无需先保存文件；生成报告时显示加载状态。"
     ],
     "compat": "试用前请了解",
     "compatText": "本项目基于开源项目 xcertplay / DiPlay 深度重构与兼容，内置离线认证材料。同包名、同签名版本可覆盖升级；签名不同的上游或 Debug 版本可能需要重新安装，请先保存设置与诊断报告。老旧车机建议先使用 30 fps 并关闭 HEVC。",
@@ -351,7 +357,8 @@
       "修正 Android 4.2/4.3 連線介面的視訊視窗檢測，避免呼叫 API 19 方法而崩潰。",
       "Android 4.2 的 H.264 首幀補充 SPS/PPS 參數，相容忽略獨立格式參數的舊解碼器。",
       "無線啟動前嘗試開啟藍牙並最多等待 3 秒；仍未開啟時顯示明確的失敗提示。",
-      "新增有線 16 步、無線 12 步連線診斷，定位從 USB、藍牙到 AirPlay 工作階段的連線中斷點。"
+      "新增有線 16 步、無線 12 步連線診斷，定位從 USB、藍牙到 AirPlay 工作階段的連線中斷點。",
+      "診斷區可直接查看日誌，無須先儲存檔案；產生報告時顯示載入狀態。"
     ],
     "diagnosticsTitle": "問題回報與日誌收集",
     "diagnosticsText": "如遇到連線異常，請在「設定 → 診斷」中儲存診斷報告，並在 GitHub Issues 中提交回報：https://github.com/programmerguohuajing/DiPlay-Legacy-Android/issues"
