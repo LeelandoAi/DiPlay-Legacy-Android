@@ -1,4 +1,4 @@
-﻿package com.shilapi.xcertplay.orchestration
+package com.shilapi.xcertplay.orchestration
 
 import android.Manifest
 import android.bluetooth.BluetoothAdapter
@@ -2932,19 +2932,33 @@ class CarPlayController(
             return "VPN service bind timed out or was unavailable"
         }
         wiredChain(10, "VPN service bound")
-        debugLog("wired VPN service bound; attaching NCM transport")
+        debugLog("wired network attach; userspaceNetworkEnabled=${config.userspaceNetworkEnabled}")
         val result = try {
-            service.attach(
-                ncm = ncm,
-                linkLocal = config.linkLocal,
-                hostMac = hostMac,
-                config = airPlayConfig,
-                identity = identity,
-                pairings = pairings,
-                mfi = mfiSession?.client,
-                listener = sessionListener,
-                media = media,
-            )
+            if (config.userspaceNetworkEnabled) {
+                service.attachUserspace(
+                    ncm = ncm,
+                    linkLocal = config.linkLocal,
+                    hostMac = hostMac,
+                    config = airPlayConfig,
+                    identity = identity,
+                    pairings = pairings,
+                    mfi = mfiSession?.client,
+                    listener = sessionListener,
+                    media = media,
+                )
+            } else {
+                service.attach(
+                    ncm = ncm,
+                    linkLocal = config.linkLocal,
+                    hostMac = hostMac,
+                    config = airPlayConfig,
+                    identity = identity,
+                    pairings = pairings,
+                    mfi = mfiSession?.client,
+                    listener = sessionListener,
+                    media = media,
+                )
+            }
         } catch (error: Throwable) {
             ncm.close()
             onStatus(CarPlayStatus.Failed(error.message ?: error.javaClass.simpleName))

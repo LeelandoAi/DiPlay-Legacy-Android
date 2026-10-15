@@ -1,0 +1,275 @@
+package com.shilapi.xcertplay.network
+
+import android.util.Log
+import com.shilapi.xcertplay.transport.EthernetIpv6Codec
+import com.shilapi.xcertplay.transport.NcmUsbBridge
+import java.io.Closeable
+import java.io.IOException
+import java.net.InetAddress
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
+
+/**
+ * Userspace NCM bridge backed by lwIP.
+ *
+ * Operates entirely in user space without requiring Android's VpnService or a Linux TUN interface.
+ * Incoming Ethernet frames from USB CDC-NCM are passed to lwIP, which handles IPv6 Link-Local
+ * addressing, NDP, TCP handshakes and TCP byte stream relaying directly into local loopback (127.0.0.1).
+ */
+class LwipNcmBridge(
+    private val ncm: NcmUsbBridge,
+    private val hostMac: ByteArray,
+    private val hostLinkLocal: String,
+    private val onDebugLog: (String) -> Unit = {},
+    private val onError: (Throwable) -> Unit,
+    @Volatile var mdnsResponder: WiredMdnsResponder? = null,
+) : Closeable {
+    init {
+        require(hostMac.size == EthernetIpv6Codec.MAC_BYTES) { "hostMac must be 6 bytes" }
+    }
+
+    @Volatile
+    private var peerMac: ByteArray? = null
+    private val hostLinkLocalBytes = InetAddress.getByName(hostLinkLocal).address
+    private val allNodesIpv6 = byteArrayOf(
+        0xff.toByte(), 0x02, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01,
+    )
+    private val allNodesMac = byteArrayOf(0x33, 0x33, 0, 0, 0, 0x01)
+
+    private var loggedInbound = false
+    private var inboundLogBudget = 16
+    private var reportInboundBudget = 8
+    private var reportTcpBudget = 8
+    private var mdnsAnswerLogBudget = 6
+    private var unmatchedMdnsLogBudget = 6
+
+    val injectedTcpPackets = AtomicInteger(0)
+    private var lwipInjectLogBudget = 8
+
+    @Volatile
+    private var lastNaTimeNanos = 0L
+    private val running = AtomicBoolean(false)
+    private lateinit var ncmRxThread: Thread
+
+    private val lwipNative = LwipNcmNative(
+        onTxFrameCallback = ::onLwipTxFrame,
+    )
+
+    fun start() {
+        check(running.compareAndSet(false, true)) { "bridge is already started" }
+
+        val created = lwipNative.create(hostMac, hostLinkLocal)
+        if (!created) {
+            val err = IOException("Failed to initialize userspace lwIP stack")
+            onError(err)
+            throw err
+        }
+
+        sendUnsolicitedNeighborAdvertisement(force = true)
+
+        ncmRxThread = Thread(::runNcmRx, "ncm-lwip-rx").apply {
+            isDaemon = true
+            start()
+        }
+    }
+
+    fun registerPort(port: Int, isTcp: Boolean) {
+        lwipNative.registerPort(port, isTcp)
+    }
+
+    private fun onLwipTxFrame(frame: ByteArray) {
+        if (!running.get()) return
+        try {
+            ncm.send(frame, WRITE_TIMEOUT_MILLIS)
+        } catch (error: Exception) {
+            Log.w(TAG, "ncm send lwip tx frame failed: ${error.message}")
+        }
+    }
+
+    private fun runNcmRx() {
+        try {
+            while (running.get()) {
+                val frame = ncm.recv(READ_TIMEOUT_MILLIS)
+                if (frame == null) {
+                    if (peerMac == null) {
+                        sendUnsolicitedNeighborAdvertisement()
+                    }
+                    continue
+                }
+
+                val ipv6 = EthernetIpv6Codec.parseIpv6View(frame) ?: continue
+                peerMac = ipv6.sourceMac
+
+                if (EthernetIpv6Codec.isNeighborSolicitationFor(frame, ipv6.payloadOffset, ipv6.payloadLength, hostLinkLocalBytes)) {
+                    val peerIp = frame.copyOfRange(ipv6.payloadOffset + 8, ipv6.payloadOffset + 24)
+                    val isUnspecified = peerIp.all { it == 0.toByte() }
+                    val replyDstMac = if (isUnspecified) allNodesMac else ipv6.sourceMac
+                    val replyDstIp = if (isUnspecified) allNodesIpv6 else peerIp
+                    val naFrame = EthernetIpv6Codec.buildNeighborAdvertisement(
+                        hostMac = hostMac,
+                        peerMac = replyDstMac,
+                        hostIpv6 = hostLinkLocalBytes,
+                        peerIpv6 = replyDstIp,
+                        solicited = !isUnspecified,
+                    )
+                    ncm.send(naFrame, WRITE_TIMEOUT_MILLIS)
+                    continue
+                }
+
+                val responder = mdnsResponder
+                val mdnsAnswers = responder?.answerFrames(
+                    frame, ipv6.payloadOffset, ipv6.payloadLength, hostMac, ipv6.sourceMac,
+                ) ?: emptyList()
+                if (mdnsAnswers.isNotEmpty()) {
+                    for (mdnsAnswer in mdnsAnswers) {
+                        ncm.send(mdnsAnswer, WRITE_TIMEOUT_MILLIS)
+                    }
+                    if (mdnsAnswerLogBudget > 0) {
+                        mdnsAnswerLogBudget--
+                        val answerMsg = "WIRED-CHAIN [15/16] mDNS _airplay query answered frames=${mdnsAnswers.size} " +
+                            "bytes=${mdnsAnswers.sumOf { it.size }}"
+                        Log.i(TAG, answerMsg)
+                        runCatching { onDebugLog(answerMsg) }
+                    }
+                    continue
+                }
+
+                if (responder != null && unmatchedMdnsLogBudget > 0) {
+                    val queryName = responder.unmatchedQueryName(frame, ipv6.payloadOffset, ipv6.payloadLength)
+                    if (queryName != null) {
+                        unmatchedMdnsLogBudget--
+                        runCatching { onDebugLog("ncm wired mdns query not answered name=$queryName") }
+                    }
+                }
+
+                if (!loggedInbound) {
+                    loggedInbound = true
+                    val inMsg = "ncm first inbound ipv6 bytes=${ipv6.payloadLength} peer=${ipv6.sourceMac.macString()}"
+                    Log.i(TAG, inMsg)
+                    runCatching { onDebugLog(inMsg) }
+                    sendUnsolicitedNeighborAdvertisement(force = true, targetMac = ipv6.sourceMac)
+                }
+
+                if (inboundLogBudget > 0) {
+                    inboundLogBudget--
+                    Log.i(TAG, "ncm inbound ${frame.summary(ipv6.payloadOffset)}")
+                }
+
+                val inboundNextHeader =
+                    if (ipv6.payloadLength >= 40) (frame[ipv6.payloadOffset + 6].toInt() and 0xff) else -1
+                if (inboundNextHeader == 6 && reportTcpBudget > 0) {
+                    reportTcpBudget--
+                    runCatching { onDebugLog("ncm inbound diag ${frame.diagnosticSummary(ipv6.payloadOffset)}") }
+                } else if (reportInboundBudget > 0) {
+                    reportInboundBudget--
+                    runCatching { onDebugLog("ncm inbound diag ${frame.diagnosticSummary(ipv6.payloadOffset)}") }
+                }
+
+                val isTcp = inboundNextHeader == 6
+                if (isTcp) {
+                    val tcpCount = injectedTcpPackets.incrementAndGet()
+                    if (tcpCount == 1) {
+                        val tcpMsg = "WIRED-CHAIN [16/16] first TCP packet passed to lwIP (iPhone -> 7000)"
+                        Log.i(TAG, tcpMsg)
+                        runCatching { onDebugLog(tcpMsg) }
+                    }
+                }
+
+                lwipNative.inputFrame(frame)
+
+                if (isTcp && lwipInjectLogBudget > 0) {
+                    lwipInjectLogBudget--
+                    val dstPort = if (ipv6.payloadLength >= 44) {
+                        ((frame[ipv6.payloadOffset + 42].toInt() and 0xff) shl 8) or
+                            (frame[ipv6.payloadOffset + 43].toInt() and 0xff)
+                    } else -1
+                    val dstLocal = ipv6.payloadLength >= 40 &&
+                        frame.copyOfRange(
+                            ipv6.payloadOffset + 24,
+                            ipv6.payloadOffset + 40,
+                        ).contentEquals(hostLinkLocalBytes)
+                    runCatching {
+                        onDebugLog(
+                            "ncm lwip inject tcp bytes=${ipv6.payloadLength} dstPort=$dstPort dstLocal=$dstLocal ok",
+                        )
+                    }
+                }
+            }
+        } catch (error: IOException) {
+            if (running.get()) onError(error)
+        } catch (error: RuntimeException) {
+            if (running.get()) onError(error)
+        }
+    }
+
+    fun sendUnsolicitedNeighborAdvertisement(force: Boolean = false, targetMac: ByteArray? = null) {
+        if (!running.get()) return
+        val now = System.nanoTime()
+        synchronized(this) {
+            if (!force && now - lastNaTimeNanos < NA_RETRY_INTERVAL_NANOS) return
+            lastNaTimeNanos = now
+        }
+        try {
+            val dstMac = targetMac ?: peerMac ?: allNodesMac
+            val frame = EthernetIpv6Codec.buildNeighborAdvertisement(
+                hostMac = hostMac,
+                peerMac = dstMac,
+                hostIpv6 = hostLinkLocalBytes,
+                peerIpv6 = allNodesIpv6,
+                solicited = false,
+            )
+            ncm.send(frame, WRITE_TIMEOUT_MILLIS)
+            val naMsg = "ncm sent unsolicited neighbor advertisement for $hostLinkLocal"
+            Log.i(TAG, naMsg)
+            runCatching { onDebugLog(naMsg) }
+        } catch (error: Exception) {
+            Log.w(TAG, "ncm unsolicited NA send failed: ${error.message}")
+        }
+    }
+
+    override fun close() {
+        if (!running.compareAndSet(true, false)) return
+        ncm.close()
+        lwipNative.destroy()
+        join(ncmRxThread)
+    }
+
+    private fun join(thread: Thread) {
+        if (thread === Thread.currentThread()) return
+        try {
+            thread.join(JOIN_TIMEOUT_MILLIS)
+        } catch (_: InterruptedException) {
+            Thread.currentThread().interrupt()
+        }
+        if (thread.isAlive) thread.interrupt()
+    }
+
+    private fun ByteArray.macString(): String =
+        joinToString(":") { byte -> "%02x".format(byte.toInt() and 0xff) }
+
+    private fun ByteArray.summary(offset: Int): String {
+        val payloadBytes = size - offset
+        if (payloadBytes < 40) return "truncated bytes=$payloadBytes"
+        val source = InetAddress.getByAddress(copyOfRange(offset + 8, offset + 24)).hostAddress
+        val destination = InetAddress.getByAddress(copyOfRange(offset + 24, offset + 40)).hostAddress
+        val nextHeader = this[offset + 6].toInt() and 0xff
+        val detail = when {
+            nextHeader == 6 && payloadBytes >= 44 -> " tcp=${u16(offset + 40)}->${u16(offset + 42)}"
+            nextHeader == 17 && payloadBytes >= 44 -> " udp=${u16(offset + 40)}->${u16(offset + 42)}"
+            nextHeader == 58 && payloadBytes >= 41 -> " icmp6=${this[offset + 40].toInt() and 0xff}"
+            else -> ""
+        }
+        return "bytes=$payloadBytes src=$source dst=$destination next=$nextHeader$detail"
+    }
+
+    private fun ByteArray.u16(offset: Int): Int =
+        ((this[offset].toInt() and 0xff) shl 8) or (this[offset + 1].toInt() and 0xff)
+
+    private companion object {
+        const val TAG = "xcertplay-usb"
+        const val READ_TIMEOUT_MILLIS = 1_000L
+        const val WRITE_TIMEOUT_MILLIS = 2_000
+        const val JOIN_TIMEOUT_MILLIS = 2_000L
+        const val NA_RETRY_INTERVAL_NANOS = 500_000_000L
+    }
+}
