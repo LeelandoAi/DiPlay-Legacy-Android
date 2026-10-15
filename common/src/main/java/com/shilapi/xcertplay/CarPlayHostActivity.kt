@@ -5430,6 +5430,10 @@ internal object CarPlayBackgroundSession {
         controller = null
         sink = null
         if (!keepOwner) { stopAction = null; owner = null }
+        // hasSession() checks `stopping` too; a stop() whose callback never ran
+        // would otherwise block updates forever (#184).
+        stopping = false
+        stopWaiters.clear()
         active = false
         width = 0
         height = 0
