@@ -1,3 +1,10 @@
+# DiPlay 0.2.62 — 2026-10-15
+
+- Preserve the VPN-owned TUN when closing a wired NCM bridge so a subsequent connection attempt can reuse it without an Already closed failure.
+- Keep NCM cleanup per attachment and release the retained TUN when the VPN service is destroyed.
+
+See [v0.2.62 release notes](docs/RELEASE-NOTES-0.2.62.md) for validation and device-testing limits.
+
 # DiPlay 0.2.61 — 2026-10-15
 
 - Remove the direct API 21 AEADBadTagException reference so AirPlay crypto verifies on Android 4.2, preserving authentication-tag rejection.
