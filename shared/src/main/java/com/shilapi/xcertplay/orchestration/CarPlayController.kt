@@ -29,6 +29,7 @@ import android.util.Log
 import com.shilapi.xcertplay.airplay.AirPlayListenerIdentity
 import com.shilapi.xcertplay.airplay.AirPlayTcpAccepted
 import com.shilapi.xcertplay.airplay.AirPlayConfig
+import com.shilapi.xcertplay.airplay.AirPlayMediaActivity
 import com.shilapi.xcertplay.airplay.AirPlayContact
 import com.shilapi.xcertplay.airplay.AirPlayKnobState
 import com.shilapi.xcertplay.airplay.AirPlayDeviceInfo
@@ -2459,6 +2460,9 @@ class CarPlayController(
                     }
                 },
                 airPlayTcpArrived = { wiredTcpArrived.get() },
+                // Issue #134: the peer-silence reset must not tear down a session whose media is still
+                // arriving; the NTDA3's iPhone stops sending iAP2 frames for minutes at a time.
+                airPlayDataRecent = { AirPlayMediaActivity.recent() },
             )
             onStatus(
                 when (result.terminal) {
