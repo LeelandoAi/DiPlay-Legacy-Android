@@ -29,6 +29,7 @@ import com.shilapi.xcertplay.compat.realSdkInt
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.provider.Settings
 import android.util.Log
 import android.view.Gravity
@@ -1949,10 +1950,29 @@ class DiPlayActivity : ComponentActivity() {
         if (!startupHotspotEligible()) return
         val app = applicationContext
         Thread({
-            val result = CarHotspotTethering.enable(app,
-                isCancelled = { startupHotspotCancelled || !startupHotspotEligible() },
-                log = { Log.i("DiPlay-Hotspot", it) },
-            )
+            var result = enableCarHotspot(app)
+            // Issue #172: 开机自启动时系统网络服务可能还没就绪，开启热点会直接失败；
+            // 手动稍后开热点能成功，说明只是时机问题，等系统稳定后补试一次。
+            if (result == CarHotspotTethering.Result.FAILED ||
+                result == CarHotspotTethering.Result.TIMED_OUT
+            ) {
+                Log.i("DiPlay-Hotspot",
+                    "car hotspot auto-start failed ($result); retrying once in ${HOTSPOT_BOOT_RETRY_DELAY_MILLIS / 1000}s")
+                val deadline = SystemClock.uptimeMillis() + HOTSPOT_BOOT_RETRY_DELAY_MILLIS
+                while (SystemClock.uptimeMillis() < deadline &&
+                    !startupHotspotCancelled && startupHotspotEligible()
+                ) {
+                    try {
+                        Thread.sleep(1000L)
+                    } catch (_: InterruptedException) {
+                        Thread.currentThread().interrupt()
+                        break
+                    }
+                }
+                if (!startupHotspotCancelled && startupHotspotEligible()) {
+                    result = enableCarHotspot(app)
+                }
+            }
             runOnUiThread {
                 if (isFinishing || isDestroyed || result == CarHotspotTethering.Result.CANCELLED) return@runOnUiThread
                 hotspotStartupResult = result
@@ -1960,6 +1980,12 @@ class DiPlayActivity : ComponentActivity() {
             }
         }, "diplay-hotspot-startup").start()
     }
+
+    private fun enableCarHotspot(app: Context): CarHotspotTethering.Result =
+        CarHotspotTethering.enable(app,
+            isCancelled = { startupHotspotCancelled || !startupHotspotEligible() },
+            log = { Log.i("DiPlay-Hotspot", it) },
+        )
 
     private fun startupHotspotEligible(): Boolean =
         CarHotspotSetup.shouldStartOnLaunch(applicationContext, CarPlayBackgroundSession.hasSession())
@@ -4789,6 +4815,8 @@ class DiPlayActivity : ComponentActivity() {
 
         private const val BYD_VEHICLE_TAG = "DiPlay-BYD13"
         private const val VEHICLE_VALIDATION_RETRY_MILLIS = 500L
+        /** Issue #172: 开机自启动热点失败后的补试等待时长（等系统网络服务就绪）。 */
+        private const val HOTSPOT_BOOT_RETRY_DELAY_MILLIS = 60_000L
         private const val ADB_KEY_SAVE_WAIT_MILLIS = 500L
         /** In-app report preview cap: weak head units cannot lay out a huge TextView. */
         private const val REPORT_PREVIEW_CHARS = 100 * 1024

@@ -1021,6 +1021,38 @@ internal fun safeClose(closeable: Closeable?) {
     }
 }
 
+/**
+ * Overloads for concrete socket types: some heavily customized head-unit runtimes
+ * (e.g. YunOS/AliOS-derived ROMs) ship a java.net.Socket / ServerSocket /
+ * DatagramSocket whose runtime class does not implement java.io.Closeable, so
+ * routing them through the Closeable overload throws ClassCastException on close
+ * and kills the calling thread mid-teardown. Closing the concrete type directly
+ * avoids the cast entirely.
+ */
+internal fun safeClose(socket: Socket?) {
+    try {
+        socket?.close()
+    } catch (_: Exception) {
+        // Best-effort close.
+    }
+}
+
+internal fun safeClose(server: ServerSocket?) {
+    try {
+        server?.close()
+    } catch (_: Exception) {
+        // Best-effort close.
+    }
+}
+
+internal fun safeClose(socket: DatagramSocket?) {
+    try {
+        socket?.close()
+    } catch (_: Exception) {
+        // Best-effort close.
+    }
+}
+
 private fun ByteArray.toHex(): String =
     joinToString(separator = "") { byte -> "%02x".format(byte.toInt() and 0xff) }
 
