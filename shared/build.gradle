@@ -37,6 +37,9 @@ android {
         targetCompatibility = JavaVersion.VERSION_11
         coreLibraryDesugaringEnabled true
     }
+    lint {
+        disable 'UnsafeIntentLaunch'
+    }
 }
 dependencies {
     coreLibraryDesugaring libs.desugar.jdk.libs

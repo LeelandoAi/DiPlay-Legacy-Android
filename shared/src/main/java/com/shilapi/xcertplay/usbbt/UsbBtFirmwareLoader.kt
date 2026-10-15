@@ -49,9 +49,95 @@ class UsbBtFirmwareLoader(
         /** Max HCI payload per Realtek download fragment (publicly used 252). */
         const val RTL_FRAGMENT_SIZE = 252
 
-        /** Vendor IDs with a known upload sequence. */
+        /** Vendor IDs with a known upload sequence or chip family. */
+        const val VID_CSR = 0x0a12
         const val VID_BROADCOM = 0x0a5c
         const val VID_REALTEK = 0x0bda
+        const val VID_UGREEN_HAYLOU = 0x2b89
+        const val VID_TPLINK = 0x2357
+        const val VID_ASUS = 0x0b05
+        const val VID_EDIMAX = 0x7392
+        const val VID_DLINK = 0x2001
+        const val VID_BELKIN = 0x050d
+        const val VID_AZUREWAVE = 0x13d3
+        const val VID_LENOVO = 0x17ef
+        const val VID_DELL = 0x413c
+
+        enum class ChipFamily {
+            REALTEK,
+            BROADCOM,
+            CSR_NO_FW,
+            OTHER,
+        }
+
+        /**
+         * Detect which chip family a dongle belongs to based on VID and PID.
+         */
+        fun detectChipFamily(vendorId: Int, productId: Int): ChipFamily {
+            if (vendorId == VID_REALTEK || vendorId == VID_UGREEN_HAYLOU) return ChipFamily.REALTEK
+            if (vendorId == VID_TPLINK && (productId == 0x0604 || productId == 0x0605)) return ChipFamily.REALTEK
+            if (vendorId == VID_ASUS && productId == 0x190e) return ChipFamily.REALTEK
+            if (vendorId == VID_EDIMAX && productId == 0xc611) return ChipFamily.REALTEK
+            if (vendorId == VID_DLINK && productId == 0x6511) return ChipFamily.REALTEK
+            if (vendorId == VID_AZUREWAVE && productId in listOf(0x3563, 0x3564, 0x3567, 0x3578, 0x3584)) return ChipFamily.REALTEK
+            if (vendorId == VID_LENOVO && productId == 0xa318) return ChipFamily.REALTEK
+
+            if (vendorId == VID_BROADCOM) return ChipFamily.BROADCOM
+            if (vendorId == VID_ASUS && productId == 0x17cb) return ChipFamily.BROADCOM
+            if (vendorId == VID_BELKIN && (productId == 0x065a || productId == 0x0018)) return ChipFamily.BROADCOM
+            if (vendorId == VID_DELL && productId == 0x8143) return ChipFamily.BROADCOM
+            if (vendorId == VID_LENOVO && productId == 0x7205) return ChipFamily.BROADCOM
+
+            if (vendorId == VID_CSR) return ChipFamily.CSR_NO_FW
+            if (vendorId == VID_TPLINK && productId == 0x0600) return ChipFamily.CSR_NO_FW
+
+            return ChipFamily.OTHER
+        }
+
+        /**
+         * Checks if the dongle uses the Realtek RTL8761 series chip (RTL8761A/B/BU/BUV).
+         */
+        fun isRtl8761Series(vendorId: Int, productId: Int): Boolean {
+            if (vendorId == VID_REALTEK && (productId == 0x8771 || productId == 0x8773 || productId == 0xb771 || productId == 0xa725)) return true
+            if (vendorId == VID_UGREEN_HAYLOU) return true // UGREEN CM390: 0x6275, 0x8771
+            if (vendorId == VID_TPLINK && (productId == 0x0604 || productId == 0x0605)) return true // UB500 / UB5A
+            if (vendorId == VID_ASUS && productId == 0x190e) return true // USB-BT500
+            if (vendorId == VID_EDIMAX && productId == 0xc611) return true // BT-8500
+            if (vendorId == VID_DLINK && productId == 0x6511) return true // DBT-6511
+            if (vendorId == VID_AZUREWAVE && productId in listOf(0x3563, 0x3564, 0x3567)) return true
+            if (vendorId == VID_LENOVO && productId == 0xa318) return true
+            return false
+        }
+
+        /**
+         * Returns an ordered list of candidate asset paths to search for this device's firmware.
+         */
+        fun getCandidateFirmwareAssets(vendorId: Int, productId: Int): List<String> {
+            val family = detectChipFamily(vendorId, productId)
+            val candidates = mutableListOf<String>()
+            val ext = if (family == ChipFamily.BROADCOM) ".hcd" else ".bin"
+            // 1. Exact match by VID_PID
+            candidates.add(assetNameFor(vendorId, productId, ext))
+
+            // 2. Chip family fallbacks
+            if (isRtl8761Series(vendorId, productId)) {
+                // RTL8761B / BUV share the same binary firmware patch
+                candidates.add("$FW_ASSET_DIR/0bda_8771.bin")
+                candidates.add("$FW_ASSET_DIR/rtl8761b.bin")
+                candidates.add("$FW_ASSET_DIR/rtl8761buv.bin")
+            }
+            if (family == ChipFamily.BROADCOM) {
+                candidates.add("$FW_ASSET_DIR/0a5c_21e8.hcd")
+                candidates.add("$FW_ASSET_DIR/bcm20702.hcd")
+            }
+            if (family == ChipFamily.REALTEK) {
+                candidates.add("$FW_ASSET_DIR/rtl_default.bin")
+            }
+            return candidates.distinct()
+        }
+
+        fun assetNameFor(vendorId: Int, productId: Int, ext: String): String =
+            "$FW_ASSET_DIR/${"%04x".format(vendorId)}_${"%04x".format(productId)}$ext"
     }
 
     sealed class LoadResult {
@@ -60,6 +146,9 @@ class UsbBtFirmwareLoader(
 
         /** No firmware file for this VID/PID in assets. */
         data class NoFirmware(val assetName: String) : LoadResult()
+
+        /** Device is ROM-based (like CSR/Qualcomm) and does not require firmware upload. */
+        data class NoFirmwareNeeded(val detail: String) : LoadResult()
 
         /** Upload attempted but failed; [reason] explains. */
         data class Failed(val reason: String) : LoadResult()
@@ -107,20 +196,29 @@ class UsbBtFirmwareLoader(
      * was reset by the upload).
      */
     fun loadForDevice(vendorId: Int, productId: Int): LoadResult {
-        return when (vendorId) {
-            VID_BROADCOM -> loadBroadcom(vendorId, productId)
-            VID_REALTEK -> loadRealtek(vendorId, productId)
-            else -> LoadResult.NoFirmware(assetNameFor(vendorId, productId, ".hcd"))
+        return when (val family = detectChipFamily(vendorId, productId)) {
+            ChipFamily.CSR_NO_FW -> {
+                Log.i(TAG, "device (0x${"%04x".format(vendorId)}:0x${"%04x".format(productId)}) is ROM-based CSR/Qualcomm; firmware upload skipped")
+                LoadResult.NoFirmwareNeeded("ROM-based CSR/Qualcomm device does not require firmware upload")
+            }
+            ChipFamily.REALTEK -> loadRealtek(vendorId, productId)
+            ChipFamily.BROADCOM -> loadBroadcom(vendorId, productId)
+            ChipFamily.OTHER -> {
+                val candidates = getCandidateFirmwareAssets(vendorId, productId)
+                val existing = candidates.firstOrNull { readAsset(it) != null }
+                if (existing != null) {
+                    if (existing.endsWith(".hcd")) loadBroadcom(vendorId, productId)
+                    else loadRealtek(vendorId, productId)
+                } else {
+                    LoadResult.NoFirmware(candidates.firstOrNull() ?: assetNameFor(vendorId, productId, ".bin"))
+                }
+            }
         }
     }
-
-    private fun assetNameFor(vendorId: Int, productId: Int, ext: String): String =
-        "$FW_ASSET_DIR/${"%04x".format(vendorId)}_${"%04x".format(productId)}$ext"
 
     private fun readAsset(name: String): ByteArray? = try {
         assets.open(name).use { it.readBytes() }
     } catch (t: Throwable) {
-        Log.i(TAG, "firmware asset not found: $name")
         null
     }
 
@@ -129,12 +227,24 @@ class UsbBtFirmwareLoader(
     // ------------------------------------------------------------------
 
     private fun loadBroadcom(vendorId: Int, productId: Int): LoadResult {
-        val assetName = assetNameFor(vendorId, productId, ".hcd")
-        val bytes = readAsset(assetName) ?: return LoadResult.NoFirmware(assetName)
+        val candidates = getCandidateFirmwareAssets(vendorId, productId)
+        var matchedAsset: String? = null
+        var bytes: ByteArray? = null
+        for (candidate in candidates) {
+            val data = readAsset(candidate)
+            if (data != null) {
+                matchedAsset = candidate
+                bytes = data
+                break
+            }
+        }
+        if (bytes == null || matchedAsset == null) {
+            return LoadResult.NoFirmware(candidates.firstOrNull() ?: assetNameFor(vendorId, productId, ".hcd"))
+        }
         val records = HcdParser.parse(bytes)
-            ?: return LoadResult.Failed("malformed .hcd file: $assetName")
-        if (records.isEmpty()) return LoadResult.Failed("empty .hcd file: $assetName")
-        Log.i(TAG, "Broadcom firmware: ${records.size} hcd records (${bytes.size} bytes)")
+            ?: return LoadResult.Failed("malformed .hcd file: $matchedAsset")
+        if (records.isEmpty()) return LoadResult.Failed("empty .hcd file: $matchedAsset")
+        Log.i(TAG, "Broadcom firmware: ${records.size} hcd records (${bytes.size} bytes) from $matchedAsset")
 
         // 1. Put the chip in download mode.
         when (val r = hci.sendCommand(OP_BCM_DOWNLOAD_MINIDRIVER, timeoutMs = 3_000)) {
@@ -160,8 +270,8 @@ class UsbBtFirmwareLoader(
                 return LoadResult.Failed("post-upload HCI_Reset failed: ${r.reason}")
             else -> { /* ok */ }
         }
-        Log.i(TAG, "Broadcom firmware upload complete")
-        return LoadResult.Uploaded(bytes.size, "${records.size} hcd records")
+        Log.i(TAG, "Broadcom firmware upload complete from $matchedAsset")
+        return LoadResult.Uploaded(bytes.size, "loaded from $matchedAsset (${records.size} hcd records)")
     }
 
     // ------------------------------------------------------------------
@@ -169,10 +279,22 @@ class UsbBtFirmwareLoader(
     // ------------------------------------------------------------------
 
     private fun loadRealtek(vendorId: Int, productId: Int): LoadResult {
-        val assetName = assetNameFor(vendorId, productId, ".bin")
-        val image = readAsset(assetName) ?: return LoadResult.NoFirmware(assetName)
-        if (image.isEmpty()) return LoadResult.Failed("empty firmware file: $assetName")
-        Log.i(TAG, "Realtek firmware: ${image.size} bytes")
+        val candidates = getCandidateFirmwareAssets(vendorId, productId)
+        var matchedAsset: String? = null
+        var image: ByteArray? = null
+        for (candidate in candidates) {
+            val data = readAsset(candidate)
+            if (data != null) {
+                matchedAsset = candidate
+                image = data
+                break
+            }
+        }
+        if (image == null || matchedAsset == null) {
+            return LoadResult.NoFirmware(candidates.firstOrNull() ?: assetNameFor(vendorId, productId, ".bin"))
+        }
+        if (image.isEmpty()) return LoadResult.Failed("empty firmware file: $matchedAsset")
+        Log.i(TAG, "Realtek firmware: ${image.size} bytes loaded from $matchedAsset for 0x${"%04x".format(vendorId)}:0x${"%04x".format(productId)}")
 
         // 1. Enter download mode. Public sequence: 0xFC20 acknowledges and the
         // chip then expects firmware fragments on the same opcode.
@@ -210,7 +332,7 @@ class UsbBtFirmwareLoader(
                 return LoadResult.Failed("post-upload HCI_Reset failed: ${r.reason}")
             else -> { /* ok */ }
         }
-        Log.i(TAG, "Realtek firmware upload complete ($total fragments)")
-        return LoadResult.Uploaded(image.size, "$total fragments")
+        Log.i(TAG, "Realtek firmware upload complete from $matchedAsset ($total fragments)")
+        return LoadResult.Uploaded(image.size, "loaded from $matchedAsset ($total fragments)")
     }
 }

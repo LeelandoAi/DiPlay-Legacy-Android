@@ -54,13 +54,39 @@ class UsbBtDongleDetector(private val appContext: Context) {
          * kept as a fallback for dongles whose descriptors lack the class code.
          */
         val KNOWN_BT_VENDORS: Map<Int, String> = mapOf(
-            0x0a12 to "CSR",
+            0x0a12 to "CSR / Qualcomm",
             0x0a5c to "Broadcom",
             0x0bda to "Realtek",
             0x8087 to "Intel",
-            0x0cf3 to "Atheros",
+            0x0cf3 to "Qualcomm Atheros",
             0x1286 to "Marvell",
+            0x2b89 to "UGREEN / Haylou",
+            0x2357 to "TP-Link",
+            0x0b05 to "ASUS",
+            0x7392 to "Edimax",
+            0x2001 to "D-Link",
+            0x050d to "Belkin",
+            0x13d3 to "AzureWave",
+            0x17ef to "Lenovo",
+            0x413c to "Dell",
+            0x03f0 to "HP",
+            0x10d6 to "Actions Semiconductor",
+            0x0489 to "Foxconn",
         )
+
+        /**
+         * Resolves a human-readable vendor label for diagnostics and UI display.
+         */
+        fun resolveVendorLabel(vendorId: Int, viaClassCode: Boolean, productId: Int? = null): String {
+            val vidHex = "%04x".format(vendorId)
+            val vendor = KNOWN_BT_VENDORS[vendorId]
+            return if (viaClassCode) {
+                vendor?.let { "$it (0x$vidHex)" } ?: "Generic Bluetooth (0x$vidHex)"
+            } else {
+                val pidHex = productId?.let { ":0x${"%04x".format(it)}" } ?: ""
+                vendor?.let { "$it (0x$vidHex$pidHex)" } ?: "Unknown (0x$vidHex$pidHex)"
+            }
+        }
 
         /** Broadcast action for the USB permission result; host activity routes it. */
         fun permissionAction(packageName: String): String =
@@ -96,20 +122,22 @@ class UsbBtDongleDetector(private val appContext: Context) {
      * never matched, so an iPhone on the same bus is ignored.
      */
     fun identify(device: UsbDevice): Dongle? {
+        val vendor = KNOWN_BT_VENDORS[device.vendorId]
         if (hasBluetoothClassCode(device)) {
-            val vendor = KNOWN_BT_VENDORS[device.vendorId]
             return Dongle(
                 device = device,
-                vendorLabel = vendor?.let { "$it (0x${device.vendorId.toString(16)})" } ?: "Unknown",
+                vendorLabel = resolveVendorLabel(device.vendorId, viaClassCode = true),
                 viaClassCode = true,
             )
         }
-        val vendor = KNOWN_BT_VENDORS[device.vendorId] ?: return null
-        return Dongle(
-            device = device,
-            vendorLabel = "$vendor (0x${device.vendorId.toString(16)})",
-            viaClassCode = false,
-        )
+        if (vendor != null) {
+            return Dongle(
+                device = device,
+                vendorLabel = resolveVendorLabel(device.vendorId, viaClassCode = false, productId = device.productId),
+                viaClassCode = false,
+            )
+        }
+        return null
     }
 
     private fun hasBluetoothClassCode(device: UsbDevice): Boolean {

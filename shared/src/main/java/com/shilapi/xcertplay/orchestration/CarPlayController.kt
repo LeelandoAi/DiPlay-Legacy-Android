@@ -1351,7 +1351,8 @@ class CarPlayController(
                         additionalBindAddresses = hotspotInfo.hostAddresses.filter { it != hostAddress },
                     )
                 ) {
-                    is CarPlayVpnService.AttachResult.Started -> Unit
+                    is CarPlayVpnService.AttachResult.Started,
+                    is CarPlayVpnService.AttachResult.Reused -> Unit
                     CarPlayVpnService.AttachResult.AlreadyStarted ->
                         throw IOException("Wireless AirPlay transport is already attached")
                     is CarPlayVpnService.AttachResult.Failed ->

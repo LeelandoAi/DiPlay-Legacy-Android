@@ -15,6 +15,8 @@ class Rtl8761BuvTargetedTest {
     companion object {
         const val VID_REALTEK = 0x0bda
         const val PID_RTL8761BU = 0x8771
+        const val VID_UGREEN_CM390 = 0x2b89
+        const val PID_UGREEN_CM390 = 0x6275
         const val FW_ASSET = "usbbt_fw/0bda_8771.bin"
         // 真实固件大小（2026-10-15 从 kernel.org linux-firmware 下载）
         const val REAL_FW_SIZE = 44484
@@ -26,6 +28,20 @@ class Rtl8761BuvTargetedTest {
         assertEquals(0x0bda, VID_REALTEK)
         // PID 0x8771 是 RTL8761BU 系列（含 BUV）的通用 PID
         assertEquals(0x8771, PID_RTL8761BU)
+        // 绿联 CM390 (2B89:6275) 应被归类为 Realtek 芯片家族
+        assertEquals(
+            UsbBtFirmwareLoader.Companion.ChipFamily.REALTEK,
+            UsbBtFirmwareLoader.detectChipFamily(VID_UGREEN_CM390, PID_UGREEN_CM390),
+        )
+        assertTrue(UsbBtFirmwareLoader.isRtl8761Series(VID_UGREEN_CM390, PID_UGREEN_CM390))
+    }
+
+    @Test
+    fun cm390FallsBackToRtl8761BuvFirmware() {
+        val candidates = UsbBtFirmwareLoader.getCandidateFirmwareAssets(VID_UGREEN_CM390, PID_UGREEN_CM390)
+        // 首选为设备精确名 2b89_6275.bin，紧接着应回退到内置的 0bda_8771.bin 固件
+        assertEquals("usbbt_fw/2b89_6275.bin", candidates[0])
+        assertTrue("candidates should contain fallback $FW_ASSET", candidates.contains(FW_ASSET))
     }
 
     @Test

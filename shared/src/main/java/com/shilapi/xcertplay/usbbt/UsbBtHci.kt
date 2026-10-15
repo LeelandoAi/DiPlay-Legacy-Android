@@ -304,12 +304,16 @@ class UsbBtHci private constructor(
             // No loader, no file, or upload failed: fall back to the old
             // download-mode hint so diagnostics say exactly what is missing.
             val recovery = tryVendorFirmwareRecovery()
-            val hint = if (recovery) {
-                "dongle entered firmware-download mode but no vendor firmware blob is bundled; " +
-                    "obtain the .hcd (Broadcom) / .bin (Realtek) for VID 0x${device.vendorId.toString(16)} " +
-                    "and place it where the app can load it"
-            } else {
-                "dongle may need vendor firmware (no response to HCI_Reset)"
+            val hint = when (fwResult) {
+                is UsbBtFirmwareLoader.LoadResult.NoFirmwareNeeded ->
+                    "device is ROM-based (no upload required); check USB bus power or connection"
+                else -> if (recovery) {
+                    "dongle entered firmware-download mode but no vendor firmware blob is bundled; " +
+                        "obtain the .hcd (Broadcom) / .bin (Realtek) for VID 0x${device.vendorId.toString(16)} " +
+                        "and place it where the app can load it"
+                } else {
+                    "dongle may need vendor firmware (no response to HCI_Reset)"
+                }
             }
             step("firmware recovery attempted: $hint")
             return HciResult.Failed("HCI_Reset failed: ${reset.reason}; $hint")
