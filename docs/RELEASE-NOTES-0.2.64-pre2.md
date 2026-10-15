@@ -26,6 +26,5 @@
 ---
 
 ## 包含产物 (Artifacts)
-- `mobile-release.apk`
-- `home-release-unsigned.apk`
-- `maphost-release-unsigned.apk`
+- `DiPlay-v0.2.64-pre2-legacy-release.apk`
+- `DiPlay-v0.2.64-pre2-legacy-release.apk.sha256`
