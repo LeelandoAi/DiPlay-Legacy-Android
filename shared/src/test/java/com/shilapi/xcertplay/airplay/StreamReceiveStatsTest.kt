@@ -76,7 +76,7 @@ class StreamReceiveStatsTest {
         stats.processed()
         clock = 5_000_000_000L
         stats.flush()
-        assertTrue(output.last().endsWith(" decryptAvgUs=1250 decryptMaxUs=2000 decryptMBps=300.0"))
+        assertTrue(output.last().endsWith(" decryptAvgUs=1250 decryptMaxUs=2000 decryptMBps=300.00"))
         clock = 10_000_000_000L
         stats.flush()
         assertTrue(!output.last().contains("decrypt"))
@@ -91,6 +91,6 @@ class StreamReceiveStatsTest {
         stats.processed()
         clock = 5_000_000_000L
         stats.flush()
-        assertTrue(output.last().endsWith(" decryptAvgUs=2000 decryptMaxUs=2000 decryptMBps=0.2"))
+        assertTrue(output.last().endsWith(" decryptAvgUs=2000 decryptMaxUs=2000 decryptMBps=0.20"))
     }
 }

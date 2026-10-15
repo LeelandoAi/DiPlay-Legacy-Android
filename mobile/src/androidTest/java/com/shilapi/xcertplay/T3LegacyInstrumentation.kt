@@ -5,6 +5,7 @@ import android.app.Instrumentation
 import android.os.Bundle
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.runner.JUnitCore
+import org.junit.runner.Request
 import org.junit.runner.notification.Failure
 import org.junit.runner.notification.RunListener
 
@@ -29,9 +30,11 @@ class T3LegacyInstrumentation : Instrumentation() {
                 sendStatus(-2, Bundle().apply { putString("stream", failure.trace) })
             }
         })
-        val suite = if (testClass == "DiPlayLegacyUpdateTlsTest")
+        val requestedClass = testClass?.substringBefore('#')?.substringAfterLast('.')
+        val suite = if (requestedClass == "DiPlayLegacyUpdateTlsTest")
             DiPlayLegacyUpdateTlsTest::class.java else T3LegacyRuntimeTest::class.java
-        val result = junit.run(suite)
+        val method = testClass?.substringAfter('#', "")?.takeIf { it.isNotBlank() }
+        val result = if (method == null) junit.run(suite) else junit.run(Request.method(suite, method))
         finish(if (result.wasSuccessful()) Activity.RESULT_OK else Activity.RESULT_CANCELED,
             Bundle().apply {
                 putString("stream", "Tests run: ${result.runCount}, failures: ${result.failureCount}, ignored: ${result.ignoreCount}")

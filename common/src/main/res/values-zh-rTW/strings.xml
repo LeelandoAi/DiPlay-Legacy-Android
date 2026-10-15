@@ -579,6 +579,8 @@
     <string name="diagnostic_report_saved_in_app">由於公開儲存位置無法使用，報告已私密儲存到 DiPlay。您可以在此分享或檢視報告。不會自動傳送任何內容。</string>
     <string name="diagnostic_report_saved_to_path">報告已儲存到：\n%1$s\n\n您也可以在此分享或檢視報告。不會自動傳送任何內容。</string>
     <string name="view_diagnostic_report">檢視報告</string>
+    <string name="view_log">查看日誌</string>
+    <string name="loading_log">正在載入日誌…</string>
     <string name="diagnostic_report_copy_hint">點「全部複製」即可把全文複製到剪貼簿。如果沒有可用的分享 App，可以使用此方式。</string>
     <string name="copy_all">全部複製</string>
     <string name="diagnostic_report_copied">全文已複製到剪貼簿。</string>
@@ -716,6 +718,7 @@
     <string name="settings_car_bluetooth_mac_dialog_title">車機藍牙 MAC 位址</string>
     <string name="settings_car_bluetooth_mac_dialog_message">輸入車機真實藍牙 MAC 位址（例如 AA:BB:CC:DD:EE:FF）。可在 iPhone「設定 → 藍牙 → (i)」或車機藍牙設定中檢視。</string>
     <string name="settings_car_bluetooth_mac_clear">清除 / 自動探測</string>
+    <string name="settings_bluetooth_diagnostic">藍牙診斷</string>
     <string name="settings_car_bluetooth_mac_invalid">請輸入有效的 12 位十六進位 MAC 位址。</string>
     <string name="report_no_usb_drive">未偵測到可寫入的USB隨身碟。請連接USB隨身碟後重試，或將報告儲存至車機。</string>
     <string name="report_auto_save_locations">自動儲存至所有可寫入位置</string>

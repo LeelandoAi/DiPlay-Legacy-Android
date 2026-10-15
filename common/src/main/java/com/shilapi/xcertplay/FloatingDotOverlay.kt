@@ -130,9 +130,14 @@ object FloatingDotOverlay {
             }
         }
         dot.setOnClickListener {
-            val launch = Intent(context, CarPlayHostActivity::class.java).apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-            }
+            // Issue #167: 以前直接启动全屏视频宿主，无会话时就是黑屏且只能进设置。
+            // 改为走桌面图标同样的入口：有会话会自动回到投屏画面，无会话则显示带连接按钮的主页。
+            val launch = context.packageManager.getLaunchIntentForPackage(context.packageName)
+                ?: Intent(context, DiPlayActivity::class.java).apply {
+                    action = Intent.ACTION_MAIN
+                    addCategory(Intent.CATEGORY_LAUNCHER)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
             runCatching { context.startActivity(launch) }
                 .onFailure { e -> Log.w(TAG, "launch failed", e) }
         }

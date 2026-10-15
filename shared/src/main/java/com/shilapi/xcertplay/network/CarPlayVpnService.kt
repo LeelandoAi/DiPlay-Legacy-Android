@@ -242,6 +242,7 @@ class CarPlayVpnService : VpnService() {
                 AirPlayAttachment(scopedAddress, config, identity, pairings, mfi, listener, media),
                 listenerReuseAddress = true,
             )
+            runCatching { listener.onDebugLog("WIRED-CHAIN [13/16] AirPlay listener bound port=${boundPort()}") }
             runCatching { listener.onDebugLog("wired AirPlay listener bound port=${boundPort()}") }
             boundPort()?.let { port ->
                 runCatching { listener.onDebugLog("wired airplay listen kernel-check: ${verifyTcp6Listen(port)}") }
@@ -550,6 +551,7 @@ class CarPlayVpnService : VpnService() {
                         mfi = current.mfi,
                         listener = object : AirPlaySessionListener by current.listener {
                             override fun onSessionActive(session: AirPlaySession) {
+                                runCatching { current.listener.onDebugLog("WIRED-CHAIN [16/16] SUCCESS: AirPlay session active") }
                                 if (current.listenerIdentity == null || !internalPeer) current.listener.onSessionActive(session)
                             }
 

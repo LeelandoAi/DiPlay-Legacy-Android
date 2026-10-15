@@ -106,7 +106,12 @@ class Ipv6NcmBridge(
     override fun close() {
         if (!running.compareAndSet(true, false)) return
         ncm.close()
-        tun.close()
+        // Issue #168: do NOT close the TUN here. Its lifecycle belongs to
+        // CarPlayVpnService, which deliberately keeps it open across wired
+        // attempts (reuseTun skips establish() to avoid leaking the 4.4 netd
+        // UID fwmark rule). Closing it here makes every retry die with
+        // "Already closed" at the next attach(). The TUN is closed in
+        // CarPlayVpnService.onDestroy().
         join(ncmToTunThread)
         join(tunToNcmThread)
     }
@@ -154,15 +159,19 @@ class Ipv6NcmBridge(
                 // answers it usefully, and a duplicate multicast reply would only
                 // confuse the iPhone's resolver.
                 val responder = mdnsResponder
-                val mdnsAnswer = responder?.answerFrame(
+                val mdnsAnswers = responder?.answerFrames(
                     frame, ipv6.payloadOffset, ipv6.payloadLength, hostMac, ipv6.sourceMac,
-                )
-                if (mdnsAnswer != null) {
-                    ncm.send(mdnsAnswer, WRITE_TIMEOUT_MILLIS)
+                ) ?: emptyList()
+                if (mdnsAnswers.isNotEmpty()) {
+                    // Issue #163: a non-QU query also gets a multicast copy, so the
+                    // iPhone sees the answer even if it ignores unicast replies.
+                    for (mdnsAnswer in mdnsAnswers) {
+                        ncm.send(mdnsAnswer, WRITE_TIMEOUT_MILLIS)
+                    }
                     if (mdnsAnswerLogBudget > 0) {
                         mdnsAnswerLogBudget--
-                        val answerMsg = "ncm answered wired mdns _airplay query with unicast response " +
-                            "bytes=${mdnsAnswer.size}"
+                        val answerMsg = "WIRED-CHAIN [15/16] mDNS _airplay query answered frames=${mdnsAnswers.size} " +
+                            "bytes=${mdnsAnswers.sumOf { it.size }}"
                         Log.i(TAG, answerMsg)
                         runCatching { onDebugLog(answerMsg) }
                     }
@@ -201,7 +210,14 @@ class Ipv6NcmBridge(
                     runCatching { onDebugLog("ncm inbound diag ${frame.diagnosticSummary(ipv6.payloadOffset)}") }
                 }
                 val isTcp = inboundNextHeader == 6
-                if (isTcp) injectedTcpPackets.incrementAndGet()
+                if (isTcp) {
+                    val tcpCount = injectedTcpPackets.incrementAndGet()
+                    if (tcpCount == 1) {
+                        val tcpMsg = "WIRED-CHAIN [16/16] first TCP packet injected to TUN (iPhone -> 7000)"
+                        Log.i(TAG, tcpMsg)
+                        runCatching { onDebugLog(tcpMsg) }
+                    }
+                }
                 output.write(frame, ipv6.payloadOffset, ipv6.payloadLength)
                 if (isTcp && tunInjectLogBudget > 0) {
                     // Issue #123: prove the SYN crossed into the kernel's TUN. A throw

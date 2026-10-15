@@ -564,6 +564,8 @@
     <string name="diagnostic_report_saved_in_app">Звіт збережено приватно в DiPlay, оскільки загальнодоступне місце збереження недоступне. Поділіться ним або перегляньте його тут. Нічого не надсилається автоматично.</string>
     <string name="diagnostic_report_saved_to_path">Звіт збережено в:\n%1$s\n\nВи також можете поділитися ним або переглянути його тут. Нічого не надсилається автоматично.</string>
     <string name="view_diagnostic_report">Переглянути звіт</string>
+    <string name="view_log">View log</string>
+    <string name="loading_log">Loading log…</string>
     <string name="diagnostic_report_copy_hint">Натисніть «Копіювати все», щоб скопіювати повний звіт у буфер обміну. Це можна використати, якщо немає застосунку для надсилання.</string>
     <string name="copy_all">Копіювати все</string>
     <string name="diagnostic_report_copied">Повний звіт скопійовано в буфер обміну.</string>
@@ -668,6 +670,7 @@
     <string name="settings_car_bluetooth_mac_dialog_title">MAC-адреса Bluetooth автомобіля</string>
     <string name="settings_car_bluetooth_mac_dialog_message">Введіть власний MAC-адрес Bluetooth автомобіля (наприклад AA:BB:CC:DD:EE:FF). Його можна знайти в iPhone Параметри → Bluetooth → (i) або в налаштуваннях автомобіля.</string>
     <string name="settings_car_bluetooth_mac_clear">Авто / Очистити</string>
+    <string name="settings_bluetooth_diagnostic">Діагностика Bluetooth</string>
     <string name="settings_car_bluetooth_mac_invalid">Будь ласка, введіть дійсний 12-значний шістнадцятковий MAC-адрес.</string>
     <string name="settings_harman_fullscreen_experimental">Повний екран Harman (експериментально)</string>
     <string name="settings_harman_fullscreen_experimental_description">Дозволяє CarPlay зайняти область штатної бічної панелі на сумісних пристроях Harman. Застосовується під час наступного відкриття вікна CarPlay; на інших прошивках можливі помилки відображення.</string>

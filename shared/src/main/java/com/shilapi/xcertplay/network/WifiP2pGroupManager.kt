@@ -108,6 +108,28 @@ class WifiP2pGroupManager(
         }
     }
 
+    /**
+     * 统计组内已加入客户端。只报数量：设备地址是 MAC，诊断日志里不能出现
+     * （port 自 ding2548-ui/DiPlay@main）。
+     */
+    override fun joinedClientCount(): Int? {
+        val activeChannel = synchronized(stateLock) {
+            if (closed) null else channel
+        } ?: return null
+        val result = AtomicReference<Int?>()
+        val latch = CountDownLatch(1)
+        return try {
+            p2pManager.requestGroupInfo(activeChannel) {
+                result.set(it?.clientList?.size ?: 0)
+                latch.countDown()
+            }
+            if (!latch.await(2, TimeUnit.SECONDS)) null else result.get()
+        } catch (error: Exception) {
+            Log.w(TAG, "Wi-Fi P2P client count request failed", error)
+            null
+        }
+    }
+
     override fun start(timeoutMillis: Long): WirelessHotspotInfo {
         val legacyChannels = Build.VERSION.SDK_INT < Build.VERSION_CODES.Q
         if (legacyChannels) {
@@ -956,3 +978,4 @@ class WifiP2pGroupManager(
             "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789"
     }
 }
+

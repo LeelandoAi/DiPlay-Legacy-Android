@@ -1,3 +1,40 @@
+# DiPlay 0.2.62 — 2026-10-15
+
+- Preserve the VPN-owned TUN when closing a wired NCM bridge so a subsequent connection attempt can reuse it without an Already closed failure.
+- Keep NCM cleanup per attachment and release the retained TUN when the VPN service is destroyed.
+
+See [v0.2.62 release notes](docs/RELEASE-NOTES-0.2.62.md) for validation and device-testing limits.
+
+# DiPlay 0.2.61 — 2026-10-15
+
+- Remove the direct API 21 AEADBadTagException reference so AirPlay crypto verifies on Android 4.2, preserving authentication-tag rejection.
+- Use a window-token attachment check on Android 4.2/4.3 to avoid an API 19 method call when opening the connection screen.
+- Include in-band SPS/PPS with the first H.264 frame on Android 4.2 for decoders that ignore separate codec-format parameters.
+- Try enabling the hybrid Bluetooth adapter before wireless startup, with a bounded wait and the existing failure message if it stays off.
+- Add wired and wireless connection-stage diagnostics from USB/Bluetooth through AirPlay session startup.
+- Add direct diagnostic-log viewing with a loading state, without requiring a saved report first.
+- Add legacy Android instrumentation coverage for authenticated decryption and tampered-ciphertext rejection.
+
+See [v0.2.61 release notes](docs/RELEASE-NOTES-0.2.61.md) for validation and device-testing limits.
+
+# DiPlay 0.2.60 — 2026-10-14
+
+- Send an additional multicast mDNS response for non-QU wired queries while preserving the unicast path and unicast-only QU responses.
+- Bound crash-trace cause traversal to prevent cyclic or deep cause chains from breaking crash reporting.
+- Add regression coverage for wired mDNS response routing/checksums and bounded crash traces.
+
+See [v0.2.60 release notes](docs/RELEASE-NOTES-0.2.60.md) for validation and device-testing limits.
+
+# DiPlay 0.2.59 — 2026-10-14
+
+- Select real Android API branches on legacy head units for USB, VPN, Bluetooth, media, settings and APK installation.
+- Correct wired AirPlay IPv6 interface-scope lookup, answer mDNS service enumeration, and reuse the VPN TUN during retries to avoid stale Android 4.4 fwmark rules.
+- Try bundled Conscrypt frame decryption on Android 4.4 while retaining the existing fallback.
+- Repair legacy APK installation and settings rebuild crashes; add a diagnostic-report copy button and preserve redacted crash traces line by line.
+- Fix release compilation and handling of the reused wired transport state.
+
+See [v0.2.59 release notes](docs/RELEASE-NOTES-0.2.59.md) for package details and validation limits.
+
 # DiPlay 0.2.46 — 2026-10-13
 
 - Bring in the latest AirPlay wired listener interface-scoped binding and kernel LISTEN diagnosis.

@@ -17,7 +17,6 @@ import org.conscrypt.Conscrypt
 import java.nio.ByteBuffer
 import java.security.GeneralSecurityException
 import java.security.SecureRandom
-import javax.crypto.AEADBadTagException
 import javax.crypto.Cipher
 import javax.crypto.spec.IvParameterSpec
 import javax.crypto.spec.SecretKeySpec
@@ -168,9 +167,11 @@ object AirPlayCrypto {
             val written = cipher.doFinal(source, target)
             target.flip()
             ByteArray(written).also { target.get(it); state.implementation = cipher.provider.name }
-        } catch (failure: AEADBadTagException) {
-            throw failure
-        } catch (_: GeneralSecurityException) {
+        } catch (failure: GeneralSecurityException) {
+            // AEADBadTagException is API 21+; never reference it directly or
+            // Dalvik on API 17 fails to verify this class (VerifyError, #157)
+            // and the app crashes at startup. Match by class name instead.
+            if (failure.javaClass.name == "javax.crypto.AEADBadTagException") throw failure
             null
         }
     }

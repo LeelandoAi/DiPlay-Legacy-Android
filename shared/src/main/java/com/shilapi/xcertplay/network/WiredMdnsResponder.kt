@@ -16,9 +16,17 @@ import java.nio.charset.StandardCharsets
  * address/port takes the ordinary unicast path the bridge already forwards, and a
  * QU-bit query explicitly asks for a unicast reply (RFC 6762 section 5.4).
  *
- * The caller feeds inbound IPv6 packets via [answerFrame]; a returned Ethernet frame
- * goes straight back over NCM to the peer. Queries for anything else return null and
- * stay on the normal TUN path.
+ * The caller feeds inbound IPv6 packets via [answerFrames]; each returned Ethernet
+ * frame goes straight back over NCM to the peer. Queries for anything else return
+ * an empty list and stay on the normal TUN path.
+ *
+ * Issue #163: the responder used to answer every query with a unicast response
+ * only. Per RFC 6762 section 5.4 a querier that does NOT set the QU bit expects
+ * a multicast response, and some stacks ignore a unicast answer to a non-QU
+ * query — the exact signature in #163 (unicast answers sent, iPhone keeps
+ * querying, no TCP/7000). So a non-QU query now also gets a multicast copy to
+ * ff02::fb; a QU query keeps the unicast-only answer. The unicast copy is always
+ * sent, so the previously working path cannot regress.
  */
 class WiredMdnsResponder(
     deviceName: String,
@@ -53,40 +61,50 @@ class WiredMdnsResponder(
 
     /**
      * Inspects one inbound IPv6 packet ([offset]/[length] view into [frame]). When it is a
-     * UDP mDNS query for this accessory's AirPlay service, returns a complete Ethernet II
-     * frame answering it (unicast to the querier); otherwise returns null.
+     * UDP mDNS query for this accessory's AirPlay service, returns the complete Ethernet II
+     * frames answering it (unicast to the querier, plus a multicast copy to ff02::fb
+     * when no question carries the QU bit); otherwise returns an empty list.
      */
-    fun answerFrame(
+    fun answerFrames(
         frame: ByteArray,
         offset: Int,
         length: Int,
         hostMac: ByteArray,
         peerMac: ByteArray,
-    ): ByteArray? {
-        if (length < IPV6_HEADER_BYTES + UDP_HEADER_BYTES + DNS_HEADER_BYTES) return null
-        if (offset < 0 || offset + length > frame.size) return null
-        if ((frame[offset].toInt() ushr 4 and 0x0f) != 6) return null
-        if ((frame[offset + IPV6_NEXT_HEADER_OFFSET].toInt() and 0xff) != UDP_NEXT_HEADER) return null
+    ): List<ByteArray> {
+        if (length < IPV6_HEADER_BYTES + UDP_HEADER_BYTES + DNS_HEADER_BYTES) return emptyList()
+        if (offset < 0 || offset + length > frame.size) return emptyList()
+        if ((frame[offset].toInt() ushr 4 and 0x0f) != 6) return emptyList()
+        if ((frame[offset + IPV6_NEXT_HEADER_OFFSET].toInt() and 0xff) != UDP_NEXT_HEADER) return emptyList()
         val dstPort = u16(frame, offset + IPV6_HEADER_BYTES + 2)
-        if (dstPort != MDNS_PORT) return null
+        if (dstPort != MDNS_PORT) return emptyList()
         // Only answer link-local multicast queries or queries sent to us directly.
         val dstFirst = frame[offset + IPV6_DESTINATION_OFFSET].toInt() and 0xff
         val dstIsMulticast = dstFirst == 0xff
         val dstIsUs = (offset + IPV6_DESTINATION_OFFSET + 16 <= offset + length) &&
             frame.copyOfRange(offset + IPV6_DESTINATION_OFFSET, offset + IPV6_DESTINATION_OFFSET + 16)
                 .contentEquals(hostAddressBytes)
-        if (!dstIsMulticast && !dstIsUs) return null
+        if (!dstIsMulticast && !dstIsUs) return emptyList()
         val udpLength = u16(frame, offset + IPV6_HEADER_BYTES + 4)
         val dnsLength = udpLength - UDP_HEADER_BYTES
-        if (dnsLength < DNS_HEADER_BYTES || offset + IPV6_HEADER_BYTES + udpLength > offset + length) return null
+        if (dnsLength < DNS_HEADER_BYTES || offset + IPV6_HEADER_BYTES + udpLength > offset + length) return emptyList()
         val srcPort = u16(frame, offset + IPV6_HEADER_BYTES)
         val srcAddress = frame.copyOfRange(offset + IPV6_SOURCE_OFFSET, offset + IPV6_SOURCE_OFFSET + 16)
         val query = frame.copyOfRange(
             offset + IPV6_HEADER_BYTES + UDP_HEADER_BYTES,
             offset + IPV6_HEADER_BYTES + UDP_HEADER_BYTES + dnsLength,
         )
-        val dnsResponse = buildResponse(query, srcAddress, srcPort) ?: return null
-        return EthernetIpv6Codec.build(hostMac, peerMac, dnsResponse)
+        val (dnsPayload, anyQu) = buildDnsPayload(query) ?: return emptyList()
+        val frames = ArrayList<ByteArray>(2)
+        frames += EthernetIpv6Codec.build(hostMac, peerMac, buildUdpIpv6(dnsPayload, srcAddress, srcPort))
+        if (!anyQu) {
+            frames += EthernetIpv6Codec.build(
+                hostMac,
+                MDNS_MULTICAST_MAC,
+                buildUdpIpv6(dnsPayload, MDNS_MULTICAST_IPV6, MDNS_PORT),
+            )
+        }
+        return frames
     }
 
     /**
@@ -112,13 +130,14 @@ class WiredMdnsResponder(
     }
 
     /**
-     * Builds the IPv6/UDP packet carrying the DNS answer, or null when the query does
-     * not ask for this accessory's AirPlay service.
+     * Builds the DNS answer payload for one mDNS query, or null when the query does
+     * not ask for this accessory's AirPlay service. The second element reports
+     * whether any question carried the QU bit (RFC 6762 section 5.4: QU set means
+     * the querier wants a unicast reply; QU clear means it expects multicast).
      */
-    fun buildResponse(query: ByteArray, querierAddress: ByteArray, querierPort: Int): ByteArray? {
-        require(querierAddress.size == 16) { "querierAddress must be 16 bytes" }
-        require(querierPort in 1..65535) { "querierPort must be in 1..65535" }
+    private fun buildDnsPayload(query: ByteArray): Pair<ByteArray, Boolean>? {
         val parsed = parseQuestions(query) ?: return null
+        val anyQu = parsed.questions.any { it.qclass and QU_BIT != 0 }
         var wantPtr = false
         var wantRaopPtr = false
         var wantServicesEnum = false
@@ -192,7 +211,7 @@ class WiredMdnsResponder(
         out.write(0)
         out.write(query, DNS_HEADER_BYTES, parsed.questionsEnd - DNS_HEADER_BYTES) // questions verbatim
         for (answer in answers) out.write(answer)
-        return buildUdpIpv6(out.toByteArray(), querierAddress, querierPort)
+        return out.toByteArray() to anyQu
     }
 
     private fun srvRdata(): ByteArray {
@@ -273,7 +292,7 @@ class WiredMdnsResponder(
     }
 
     private data class ParsedQuery(val questions: List<Question>, val questionsEnd: Int)
-    private data class Question(val name: String, val type: Int)
+    private data class Question(val name: String, val type: Int, val qclass: Int)
 
     private fun parseQuestions(query: ByteArray): ParsedQuery? {
         if (query.size < DNS_HEADER_BYTES) return null
@@ -285,7 +304,7 @@ class WiredMdnsResponder(
         repeat(qdCount) {
             val (name, next) = readName(query, pos) ?: return null
             if (next + 4 > query.size) return null
-            questions += Question(name, u16(query, next))
+            questions += Question(name, u16(query, next), u16(query, next + 2))
             pos = next + 4
         }
         return ParsedQuery(questions, pos)
@@ -370,6 +389,13 @@ class WiredMdnsResponder(
 
     companion object {
         private const val MDNS_PORT = 5353
+        private const val QU_BIT = 0x8000
+        /** mDNS link-local multicast group ff02::fb (RFC 6762). */
+        private val MDNS_MULTICAST_IPV6 = byteArrayOf(
+            0xff.toByte(), 0x02, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xfb.toByte(),
+        )
+        /** Ethernet multicast MAC for ff02::fb (33:33:00:00:00:fb). */
+        private val MDNS_MULTICAST_MAC = byteArrayOf(0x33, 0x33, 0, 0, 0, 0xfb.toByte())
         private const val IPV6_HEADER_BYTES = 40
         private const val IPV6_NEXT_HEADER_OFFSET = 6
         private const val IPV6_SOURCE_OFFSET = 8

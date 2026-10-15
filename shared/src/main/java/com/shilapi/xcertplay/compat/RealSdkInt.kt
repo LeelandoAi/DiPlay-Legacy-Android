@@ -1,4 +1,4 @@
-package com.shilapi.xcertplay.compat
+﻿package com.shilapi.xcertplay.compat
 
 import android.os.Build
 
@@ -32,3 +32,4 @@ fun realSdkInt(): Int {
     }
     return reported
 }
+
