@@ -1,3 +1,11 @@
+# DiPlay 0.2.64 (Pre-release) — 2026-10-15
+
+- Userspace lwIP TCP/IP stack for wired CarPlay: direct NCM USB frame relaying via userspace lwIP, bypassing system network stack limitations on legacy Android head units (Allwinner T3, MTK, etc.).
+- Native JNI NCM relay (`lwip_ncm_relay.c`): zero-copy network buffer forwarding between USB host endpoints and CarPlay TCP/UDP services.
+- End-to-end automated testing (`T3LegacyRuntimeTest`): comprehensive validation of wired CarPlay handoff, DHCP, DNS, HTTP, and media streaming over userspace lwIP.
+
+See [v0.2.64-pre1 release notes](docs/RELEASE-NOTES-0.2.64-pre1.md) for validation and device-testing limits.
+
 # DiPlay 0.2.63 — 2026-10-15
 
 - Automatic hotspot retry: retry starting the built-in car hotspot once after a 60-second delay if the initial boot-up attempt fails.
