@@ -69,35 +69,40 @@ class UsbBtPairingAgent(
     }
 
     private val running = AtomicBoolean(false)
-    private var pumpThread: Thread? = null
+    private var executor: java.util.concurrent.ExecutorService? = null
 
-    /** Start the event pump. Idempotent. */
+    /** Start the pairing agent. Idempotent. */
     fun start() {
         if (!running.compareAndSet(false, true)) return
-        pumpThread = Thread(::pumpLoop, "UsbBtPairing").apply {
-            isDaemon = true
-            start()
+        executor = java.util.concurrent.Executors.newSingleThreadExecutor { runnable ->
+            Thread(runnable, "UsbBtPairing").apply { isDaemon = true }
         }
         Log.i(TAG, "pairing agent started")
     }
 
     fun stop() {
-        running.set(false)
-        pumpThread?.interrupt()
-        pumpThread = null
+        if (!running.compareAndSet(false, true)) return
+        executor?.shutdownNow()
+        executor = null
         Log.i(TAG, "pairing agent stopped")
     }
 
-    private fun pumpLoop() {
-        while (running.get()) {
-            val event = try {
-                hci.pollEvent(timeoutMs = 500)
-            } catch (t: Throwable) {
-                if (running.get()) Log.w(TAG, "event poll failed", t)
-                null
-            } ?: continue
-            runCatching { handleEvent(event) }
-                .onFailure { Log.w(TAG, "pairing event handler failed", it) }
+    /**
+     * Dispatch an incoming HCI event to the pairing agent.
+     * Asynchronously processed on the pairing worker thread to avoid blocking the HCI pump.
+     */
+    fun onEvent(event: HciProtocol.HciEvent) {
+        if (!running.get()) return
+        when (event.code) {
+            EVT_IO_CAPABILITY_REQUEST,
+            EVT_USER_CONFIRMATION_REQUEST,
+            EVT_LINK_KEY_NOTIFICATION,
+            EVT_SIMPLE_PAIRING_COMPLETE -> {
+                executor?.execute {
+                    runCatching { handleEvent(event) }
+                        .onFailure { Log.w(TAG, "pairing event handler failed", it) }
+                }
+            }
         }
     }
 

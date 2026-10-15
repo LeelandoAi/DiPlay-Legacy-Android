@@ -37,10 +37,18 @@ object HciProtocol {
 
     val OP_RESET = opcode(0x03, 0x0003)
     val OP_READ_LOCAL_VERSION = opcode(0x04, 0x0001)
+    val OP_READ_LOCAL_FEATURES = opcode(0x04, 0x0003)
     val OP_READ_BD_ADDR = opcode(0x04, 0x0009)
     val OP_READ_BUFFER_SIZE = opcode(0x04, 0x0005)
     val OP_WRITE_SCAN_ENABLE = opcode(0x03, 0x001A)
     val OP_WRITE_LOCAL_NAME = opcode(0x03, 0x0013)
+    val OP_WRITE_CLASS_OF_DEVICE = opcode(0x03, 0x0024)
+    val OP_WRITE_INQUIRY_MODE = opcode(0x03, 0x0045)
+    val OP_WRITE_INQUIRY_SCAN_TYPE = opcode(0x03, 0x0043)
+    val OP_WRITE_PAGE_SCAN_TYPE = opcode(0x03, 0x0047)
+    val OP_WRITE_DEFAULT_LINK_POLICY = opcode(0x02, 0x000F)
+    val OP_READ_INQUIRY_RESPONSE_TX_POWER = opcode(0x03, 0x0058)
+    val OP_WRITE_EXTENDED_INQUIRY_RESPONSE = opcode(0x03, 0x0052)
 
     // Write_Scan_Enable values.
     const val SCAN_DISABLED = 0x00
@@ -168,6 +176,45 @@ object HciProtocol {
         return out
     }
 
+    /** Encode Class of Device (3 bytes LE). Default handsfree car audio is 0x200408. */
+    fun encodeWriteClassOfDevice(cod: Int): ByteArray = byteArrayOf(
+        (cod and 0xFF).toByte(),
+        ((cod ushr 8) and 0xFF).toByte(),
+        ((cod ushr 16) and 0xFF).toByte(),
+    )
+
+    /** Encode Write_Extended_Inquiry_Response: FEC_Required(1) + 240 bytes EIR data. */
+    fun encodeWriteExtendedInquiryResponse(eirData: ByteArray, fecRequired: Boolean = false): ByteArray {
+        val out = ByteArray(241)
+        out[0] = if (fecRequired) 1 else 0
+        val copyLen = minOf(eirData.size, 240)
+        eirData.copyInto(out, 1, 0, copyLen)
+        return out
+    }
+
+    /** Encode Write_Inquiry_Scan_Type or Write_Page_Scan_Type: 1=interlaced, 0=standard. */
+    fun encodeWriteScanType(interlaced: Boolean): ByteArray =
+        byteArrayOf(if (interlaced) 1 else 0)
+
+    /** Encode Write_Inquiry_Mode: 0=standard, 1=with RSSI, 2=Extended Inquiry Result or RSSI. */
+    fun encodeWriteInquiryMode(mode: Int): ByteArray =
+        byteArrayOf((mode and 0xFF).toByte())
+
+    /** Encode Write_Default_Link_Policy_Settings: 2 bytes LE. Default 0x0005 (role switch + sniff). */
+    fun encodeWriteDefaultLinkPolicy(policy: Int): ByteArray = byteArrayOf(
+        (policy and 0xFF).toByte(),
+        ((policy ushr 8) and 0xFF).toByte(),
+    )
+
+    /** Encode Set_Event_Mask: 8 bytes LE. */
+    fun encodeSetEventMask(mask: Long = -1L): ByteArray {
+        val out = ByteArray(8)
+        for (i in 0..7) {
+            out[i] = ((mask ushr (i * 8)) and 0xFF).toByte()
+        }
+        return out
+    }
+
     // ------------------------------------------------------------------
     // HCI ACL data packets (Phase 3).
     // ------------------------------------------------------------------
@@ -222,6 +269,7 @@ object HciProtocol {
     // HCI events needed for BR/EDR connection management (Phase 3/4).
     // ------------------------------------------------------------------
     const val EVT_CONNECTION_COMPLETE = 0x03
+    const val EVT_CONNECTION_REQUEST = 0x04
     const val EVT_DISCONNECTION_COMPLETE = 0x05
     const val EVT_NUM_COMPLETED_PACKETS = 0x13
     const val EVT_IO_CAPABILITY_REQUEST = 0x31
@@ -231,6 +279,7 @@ object HciProtocol {
 
     val OP_CREATE_CONNECTION = opcode(0x01, 0x0005)
     val OP_DISCONNECT = opcode(0x01, 0x0006)
+    val OP_ACCEPT_CONNECTION_REQUEST = opcode(0x01, 0x0009)
     val OP_IO_CAPABILITY_REQUEST_REPLY = opcode(0x01, 0x002B)
     val OP_USER_CONFIRMATION_REQUEST_REPLY = opcode(0x01, 0x002C)
     val OP_USER_CONFIRMATION_REQUEST_NEGATIVE_REPLY = opcode(0x01, 0x002D)
@@ -378,11 +427,58 @@ object HciProtocol {
     fun parseConnectionComplete(event: HciEvent): ConnectionComplete? {
         if (event.code != EVT_CONNECTION_COMPLETE || event.params.size < 11) return null
         val handle = (event.params[1].toInt() and 0xFF) or
-            ((event.params[2].toInt() and 0xFF) shl 8) and 0x0FFF
+            (((event.params[2].toInt() and 0xFF) shl 8) and 0x0FFF)
         return ConnectionComplete(
             status = event.params[0].toInt() and 0xFF,
             handle = handle,
             bdAddr = parseBdAddrBytes(event.params, 3),
+        )
+    }
+
+    data class ConnectionRequest(
+        val bdAddr: String,
+        val classOfDevice: Int,
+        val linkType: Int,
+        val rawAddr: ByteArray,
+    )
+
+    /** Parse Connection Request: BD_ADDR(6) | Class_of_Device(3) | Link_Type(1). */
+    fun parseConnectionRequest(event: HciEvent): ConnectionRequest? {
+        if (event.code != EVT_CONNECTION_REQUEST || event.params.size < 10) return null
+        val addr = parseBdAddrBytes(event.params, 0) ?: return null
+        val cod = (event.params[6].toInt() and 0xFF) or
+            ((event.params[7].toInt() and 0xFF) shl 8) or
+            ((event.params[8].toInt() and 0xFF) shl 16)
+        val linkType = event.params[9].toInt() and 0xFF
+        return ConnectionRequest(
+            bdAddr = addr,
+            classOfDevice = cod,
+            linkType = linkType,
+            rawAddr = event.params.copyOfRange(0, 6),
+        )
+    }
+
+    /** Encode Accept_Connection_Request: BD_ADDR(6 LE) | role(1). 0x01 = remain slave. */
+    fun encodeAcceptConnection(addrBytes: ByteArray, role: Byte = 0x01): ByteArray {
+        require(addrBytes.size == 6) { "BD_ADDR must be 6 bytes" }
+        return addrBytes + byteArrayOf(role)
+    }
+
+    data class DisconnectionComplete(
+        val status: Int,
+        val handle: Int,
+        val reason: Int,
+    )
+
+    /** Parse Disconnection Complete: status(1) | handle(2) | reason(1). */
+    fun parseDisconnectionComplete(event: HciEvent): DisconnectionComplete? {
+        if (event.code != EVT_DISCONNECTION_COMPLETE || event.params.size < 4) return null
+        val handle = (event.params[1].toInt() and 0xFF) or
+            (((event.params[2].toInt() and 0xFF) shl 8) and 0x0FFF)
+        return DisconnectionComplete(
+            status = event.params[0].toInt() and 0xFF,
+            handle = handle,
+            reason = event.params[3].toInt() and 0xFF,
         )
     }
 

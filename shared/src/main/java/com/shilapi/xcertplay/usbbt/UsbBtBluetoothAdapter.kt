@@ -13,12 +13,18 @@ import com.shilapi.xcertplay.bluetooth.CarPlayBluetooth
 import com.shilapi.xcertplay.bluetooth.CarPlayBluetoothDevice
 import com.shilapi.xcertplay.transport.BlockingDuplexByteStream
 import com.shilapi.xcertplay.usbbt.HciProtocol.EVT_CONNECTION_COMPLETE
+import com.shilapi.xcertplay.usbbt.HciProtocol.EVT_CONNECTION_REQUEST
+import com.shilapi.xcertplay.usbbt.HciProtocol.EVT_DISCONNECTION_COMPLETE
+import com.shilapi.xcertplay.usbbt.HciProtocol.OP_ACCEPT_CONNECTION_REQUEST
 import com.shilapi.xcertplay.usbbt.HciProtocol.OP_CREATE_CONNECTION
 import com.shilapi.xcertplay.usbbt.HciProtocol.OP_DISCONNECT
+import com.shilapi.xcertplay.usbbt.HciProtocol.encodeAcceptConnection
 import com.shilapi.xcertplay.usbbt.HciProtocol.encodeBdAddr
 import com.shilapi.xcertplay.usbbt.HciProtocol.encodeCreateConnection
 import com.shilapi.xcertplay.usbbt.HciProtocol.encodeDisconnect
 import com.shilapi.xcertplay.usbbt.HciProtocol.parseConnectionComplete
+import com.shilapi.xcertplay.usbbt.HciProtocol.parseConnectionRequest
+import com.shilapi.xcertplay.usbbt.HciProtocol.parseDisconnectionComplete
 import java.io.Closeable
 import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
@@ -302,7 +308,7 @@ class UsbBtBluetoothAdapter(
         try {
             // 2) L2CAP layer on this handle + ACL receive pump hookup.
             // One L2CAP instance per ACL handle, shared by all streams on it.
-            val l2cap = l2capLayers.getOrPut(handle) { L2capLayer(aclHandle = handle, hci = h) }
+            val l2cap = getOrCreateL2cap(handle, h)
 
             // 3) SDP: find the iAP2 RFCOMM channel.
             val sdp = SdpClient(l2cap, handle)
@@ -386,6 +392,22 @@ class UsbBtBluetoothAdapter(
         }
     }
 
+    /** Get or create L2capLayer on [handle], registering the SDP server with CarPlay/iAP2 records. */
+    private fun getOrCreateL2cap(handle: Int, h: UsbBtHci): L2capLayer {
+        l2capLayers[handle]?.let { return it }
+        return synchronized(l2capLayers) {
+            l2capLayers[handle] ?: run {
+                val l2cap = L2capLayer(aclHandle = handle, hci = h)
+                val identity = UsbBtIdentity(
+                    name = "DiPlay",
+                )
+                l2cap.registerSdpServer(SdpCodec.defaultRecords(identity))
+                l2capLayers[handle] = l2cap
+                l2cap
+            }
+        }
+    }
+
     /** Release one user of [handle]; disconnects HCI only when the last user goes. */
     private fun releaseAclRef(handle: Int) {
         val remaining = aclRefCount[handle]?.decrementAndGet() ?: 0
@@ -403,6 +425,16 @@ class UsbBtBluetoothAdapter(
         }
     }
 
+    private fun onPeerDisconnected(handle: Int) {
+        aclRefCount.remove(handle)
+        aclHandleByAddr.entries.find { it.value == handle }?.let { entry ->
+            aclHandleByAddr.remove(entry.key)
+            connectedOrder.remove(entry.key)
+        }
+        l2capLayers.remove(handle)?.let { runCatching { it.close() } }
+        Log.i(TAG, "ACL down (peer disconnected): handle=0x${handle.toString(16)}")
+    }
+
     private fun teardown(handle: Int) = releaseAclRef(handle)
 
     // ------------------------------------------------------------------
@@ -413,15 +445,47 @@ class UsbBtBluetoothAdapter(
         if (!pumpRunning.compareAndSet(false, true)) return
         pumpThread = Thread({
             while (pumpRunning.get()) {
-                // HCI events (connection completions for pending ACLs).
+                // HCI events (connection completions, inbound connection requests, pairing, etc.).
                 val event = runCatching { h.pollEvent(200) }.getOrNull()
-                if (event != null && event.code == EVT_CONNECTION_COMPLETE) {
-                    val cc = parseConnectionComplete(event)
-                    if (cc?.bdAddr != null) {
-                        pendingAcl[cc.bdAddr.uppercase()]?.let { pending ->
-                            pending.handle = cc.handle
-                            pending.status = cc.status
-                            pending.latch.countDown()
+                if (event != null) {
+                    pairingAgent?.onEvent(event)
+                    when (event.code) {
+                        EVT_CONNECTION_REQUEST -> {
+                            val req = parseConnectionRequest(event)
+                            if (req != null) {
+                                Log.i(TAG, "incoming connection request from ${req.bdAddr} linkType=${req.linkType}")
+                                if (req.linkType == 1) { // ACL
+                                    val acceptCmd = encodeAcceptConnection(req.rawAddr)
+                                    val res = h.sendCommand(OP_ACCEPT_CONNECTION_REQUEST, acceptCmd)
+                                    Log.i(TAG, "accept connection result for ${req.bdAddr}: $res")
+                                }
+                            }
+                        }
+                        EVT_CONNECTION_COMPLETE -> {
+                            val cc = parseConnectionComplete(event)
+                            if (cc != null && cc.bdAddr != null) {
+                                val key = cc.bdAddr.uppercase()
+                                if (cc.status == 0) {
+                                    aclHandleByAddr[key] = cc.handle
+                                    connectedOrder.remove(key)
+                                    connectedOrder.addLast(key)
+                                    getOrCreateL2cap(cc.handle, h)
+                                    Log.i(TAG, "ACL up: $key handle=0x${cc.handle.toString(16)}")
+                                } else {
+                                    Log.w(TAG, "ACL connection failed: $key status=0x${cc.status.toString(16)}")
+                                }
+                                pendingAcl[key]?.let { pending ->
+                                    pending.handle = cc.handle
+                                    pending.status = cc.status
+                                    pending.latch.countDown()
+                                }
+                            }
+                        }
+                        EVT_DISCONNECTION_COMPLETE -> {
+                            val dc = parseDisconnectionComplete(event)
+                            if (dc != null && dc.status == 0) {
+                                onPeerDisconnected(dc.handle)
+                            }
                         }
                     }
                 }

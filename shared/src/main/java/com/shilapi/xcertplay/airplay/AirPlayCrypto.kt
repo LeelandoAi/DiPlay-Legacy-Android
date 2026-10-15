@@ -155,7 +155,7 @@ object AirPlayCrypto {
         // Cipher.updateAAD() only exists on API 19+; calling it on Android 4.2/4.3
         // throws NoSuchMethodError and kills the calling thread (#170, #178).
         // Use the bundled BouncyCastle ChaCha20-Poly1305 for AAD there.
-        if (aad.isNotEmpty() && Build.VERSION.SDK_INT < Build.VERSION_CODES.KITKAT) return null
+        if (aad.isNotEmpty() && Build.VERSION.SDK_INT in 1 until Build.VERSION_CODES.KITKAT) return null
         return try {
             val cipher = state.cipher
             cipher.init(mode, SecretKeySpec(key, "ChaCha20"), IvParameterSpec(nonce))

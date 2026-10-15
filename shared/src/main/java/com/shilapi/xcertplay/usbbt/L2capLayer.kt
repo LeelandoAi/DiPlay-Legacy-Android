@@ -72,6 +72,26 @@ class L2capLayer(
     /** Incoming data callbacks per local CID. */
     private val dataHandlers = ConcurrentHashMap<Int, (ByteArray) -> Unit>()
 
+    /** PSM -> Inbound connection factory: (Channel) -> ((ByteArray) -> Unit) */
+    private val services = ConcurrentHashMap<Int, (Channel) -> ((ByteArray) -> Unit)>()
+
+    fun registerService(psm: Int, serviceFactory: (Channel) -> ((ByteArray) -> Unit)) {
+        services[psm] = serviceFactory
+    }
+
+    /**
+     * Binds an SDP Server to PSM 1 (SDP), responding to incoming Service Search / Attribute queries.
+     */
+    fun registerSdpServer(records: List<SdpRecord>) {
+        val server = SdpServer(records)
+        registerService(HciProtocol.L2CAP_PSM_SDP) { channel ->
+            { req ->
+                val rsp = server.handle(req, aclMtu)
+                send(channel, rsp)
+            }
+        }
+    }
+
     private data class PendingConnect(
         val psm: Int,
         val localCid: Int,
@@ -211,6 +231,7 @@ class L2capLayer(
             }
             val data = payload.copyOfRange(at + 4, at + 4 + len)
             when (code) {
+                L2CAP_CMD_CONNECTION_REQ -> onConnectionRequest(id, data)
                 L2CAP_CMD_CONNECTION_RSP -> onConnectionResponse(id, data)
                 L2CAP_CMD_CONFIG_REQ -> onConfigRequest(id, data)
                 L2CAP_CMD_CONFIG_RSP -> { /* accepted; nothing to do */ }
@@ -219,6 +240,48 @@ class L2capLayer(
             }
             at += 4 + len
         }
+    }
+
+    private fun onConnectionRequest(id: Int, data: ByteArray) {
+        if (data.size < 4) return
+        val psm = readU16(data, 0) ?: return
+        val scid = readU16(data, 2) ?: return
+        val factory = services[psm]
+        if (factory == null) {
+            // Reject: result = 0x0002 (PSM not supported)
+            val rsp = byteArrayOf(
+                L2CAP_CMD_CONNECTION_RSP.toByte(),
+                id.toByte(),
+                0x08, 0x00,
+            ) + u16le(0) + u16le(scid) + u16le(0x0002) + u16le(0)
+            hci.sendAcl(aclHandle, encodeL2cap(L2CAP_CID_SIGNALING, rsp))
+            Log.w(TAG, "L2CAP connection request for unsupported PSM 0x${psm.toString(16)} rejected")
+            return
+        }
+
+        val localCid = allocCid()
+        val channel = Channel(localCid = localCid, remoteCid = scid, psm = psm)
+        channels[localCid] = channel
+        val handler = factory(channel)
+        dataHandlers[localCid] = handler
+
+        // Respond with Success: result = 0x0000, status = 0x0000
+        val rsp = byteArrayOf(
+            L2CAP_CMD_CONNECTION_RSP.toByte(),
+            id.toByte(),
+            0x08, 0x00,
+        ) + u16le(localCid) + u16le(scid) + u16le(L2CAP_CONN_SUCCESS) + u16le(0)
+        hci.sendAcl(aclHandle, encodeL2cap(L2CAP_CID_SIGNALING, rsp))
+
+        // Send our Configuration Request to peer
+        val sigId = nextSignalId()
+        val configReq = byteArrayOf(
+            L2CAP_CMD_CONFIG_REQ.toByte(),
+            sigId.toByte(),
+            0x04, 0x00,
+        ) + u16le(scid) + u16le(0)
+        hci.sendAcl(aclHandle, encodeL2cap(L2CAP_CID_SIGNALING, configReq))
+        Log.i(TAG, "L2CAP inbound channel up: psm=0x${psm.toString(16)} localCid=0x${localCid.toString(16)} remoteCid=0x${scid.toString(16)}")
     }
 
     private fun onConnectionResponse(id: Int, data: ByteArray) {

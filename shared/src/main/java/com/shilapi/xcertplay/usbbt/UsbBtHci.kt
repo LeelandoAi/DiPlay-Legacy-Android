@@ -13,11 +13,21 @@ import com.shilapi.xcertplay.usbbt.HciProtocol.MAX_EVENT_PACKET_SIZE
 import com.shilapi.xcertplay.usbbt.HciProtocol.OP_BCM_DOWNLOAD_MINIDRIVER
 import com.shilapi.xcertplay.usbbt.HciProtocol.OP_READ_BD_ADDR
 import com.shilapi.xcertplay.usbbt.HciProtocol.OP_READ_BUFFER_SIZE
+import com.shilapi.xcertplay.usbbt.HciProtocol.OP_READ_INQUIRY_RESPONSE_TX_POWER
+import com.shilapi.xcertplay.usbbt.HciProtocol.OP_READ_LOCAL_FEATURES
 import com.shilapi.xcertplay.usbbt.HciProtocol.OP_READ_LOCAL_VERSION
 import com.shilapi.xcertplay.usbbt.HciProtocol.OP_RESET
 import com.shilapi.xcertplay.usbbt.HciProtocol.OP_RTL_DOWNLOAD_COMMAND
+import com.shilapi.xcertplay.usbbt.HciProtocol.OP_SET_EVENT_MASK
+import com.shilapi.xcertplay.usbbt.HciProtocol.OP_WRITE_CLASS_OF_DEVICE
+import com.shilapi.xcertplay.usbbt.HciProtocol.OP_WRITE_DEFAULT_LINK_POLICY
+import com.shilapi.xcertplay.usbbt.HciProtocol.OP_WRITE_EXTENDED_INQUIRY_RESPONSE
+import com.shilapi.xcertplay.usbbt.HciProtocol.OP_WRITE_INQUIRY_MODE
+import com.shilapi.xcertplay.usbbt.HciProtocol.OP_WRITE_INQUIRY_SCAN_TYPE
 import com.shilapi.xcertplay.usbbt.HciProtocol.OP_WRITE_LOCAL_NAME
+import com.shilapi.xcertplay.usbbt.HciProtocol.OP_WRITE_PAGE_SCAN_TYPE
 import com.shilapi.xcertplay.usbbt.HciProtocol.OP_WRITE_SCAN_ENABLE
+import com.shilapi.xcertplay.usbbt.HciProtocol.OP_WRITE_SIMPLE_PAIRING_MODE
 import com.shilapi.xcertplay.usbbt.HciProtocol.SCAN_INQUIRY_AND_PAGE
 import com.shilapi.xcertplay.usbbt.HciProtocol.USB_BT_CONTROL_REQUEST
 import com.shilapi.xcertplay.usbbt.HciProtocol.USB_BT_REQ_TYPE_CLASS_INTERFACE_OUT
@@ -26,6 +36,12 @@ import com.shilapi.xcertplay.usbbt.HciProtocol.USB_PROTOCOL_BLUETOOTH
 import com.shilapi.xcertplay.usbbt.HciProtocol.USB_SUBCLASS_RF
 import com.shilapi.xcertplay.usbbt.HciProtocol.encodeCommand
 import com.shilapi.xcertplay.usbbt.HciProtocol.encodeLocalName
+import com.shilapi.xcertplay.usbbt.HciProtocol.encodeSetEventMask
+import com.shilapi.xcertplay.usbbt.HciProtocol.encodeWriteClassOfDevice
+import com.shilapi.xcertplay.usbbt.HciProtocol.encodeWriteDefaultLinkPolicy
+import com.shilapi.xcertplay.usbbt.HciProtocol.encodeWriteExtendedInquiryResponse
+import com.shilapi.xcertplay.usbbt.HciProtocol.encodeWriteInquiryMode
+import com.shilapi.xcertplay.usbbt.HciProtocol.encodeWriteScanType
 import com.shilapi.xcertplay.usbbt.HciProtocol.parseBdAddr
 import com.shilapi.xcertplay.usbbt.HciProtocol.parseBufferSize
 import com.shilapi.xcertplay.usbbt.HciProtocol.parseCommandComplete
@@ -324,6 +340,11 @@ class UsbBtHci private constructor(
             is HciResult.Failed -> step("Local_Version failed (non-fatal): ${version.reason}")
         }
 
+        when (val features = timed("Read_Local_Features", UsbBtTiming.READ_POLICY, OP_READ_LOCAL_FEATURES)) {
+            is HciResult.Ok -> step("Local_Features ok (${features.value.size} return bytes)")
+            is HciResult.Failed -> step("Local_Features failed (non-fatal): ${features.reason}")
+        }
+
         val bdAddr = when (val addr = timed("Read_BD_ADDR", UsbBtTiming.READ_POLICY, OP_READ_BD_ADDR)) {
             is HciResult.Ok -> parseBdAddr(addr.value)?.also { step("BD_ADDR=$it") }
                 ?: run { step("Read_BD_ADDR returned malformed address"); null }
@@ -342,16 +363,54 @@ class UsbBtHci private constructor(
             }
         }
 
-        val scan = timed(
-            "Write_Scan_Enable",
+        // 6. Set_Event_Mask
+        timed(
+            "Set_Event_Mask",
             UsbBtTiming.WRITE_POLICY,
-            OP_WRITE_SCAN_ENABLE,
-            byteArrayOf(SCAN_INQUIRY_AND_PAGE.toByte()),
+            OP_SET_EVENT_MASK,
+            encodeSetEventMask(),
         )
-        if (scan is HciResult.Failed) {
-            return HciResult.Failed("Write_Scan_Enable failed: ${scan.reason}")
+
+        // 7. Write_Simple_Pairing_Mode (enable SSP for seamless pairing with iPhone)
+        val ssp = timed(
+            "Write_Simple_Pairing_Mode",
+            UsbBtTiming.WRITE_POLICY,
+            OP_WRITE_SIMPLE_PAIRING_MODE,
+            byteArrayOf(0x01),
+        )
+        if (ssp is HciResult.Failed) {
+            step("Write_Simple_Pairing_Mode failed (non-fatal): ${ssp.reason}")
         }
 
+        // 8. Write_Inquiry_Mode (2 = Extended Inquiry Result or RSSI)
+        timed(
+            "Write_Inquiry_Mode",
+            UsbBtTiming.WRITE_POLICY,
+            OP_WRITE_INQUIRY_MODE,
+            encodeWriteInquiryMode(2),
+        )
+
+        // 9. Write_Default_Link_Policy_Settings (0x0005 = role switch + sniff)
+        timed(
+            "Write_Default_Link_Policy",
+            UsbBtTiming.WRITE_POLICY,
+            OP_WRITE_DEFAULT_LINK_POLICY,
+            encodeWriteDefaultLinkPolicy(5),
+        )
+
+        // 10. Write_Class_Of_Device (Handsfree car audio: 0x200408)
+        val btIdentity = UsbBtIdentity(name = localName)
+        val cod = timed(
+            "Write_Class_Of_Device",
+            UsbBtTiming.WRITE_POLICY,
+            OP_WRITE_CLASS_OF_DEVICE,
+            encodeWriteClassOfDevice(btIdentity.classOfDevice),
+        )
+        if (cod is HciResult.Failed) {
+            step("Write_Class_Of_Device failed (non-fatal): ${cod.reason}")
+        }
+
+        // 11. Write_Local_Name
         val name = timed(
             "Write_Local_Name",
             UsbBtTiming.WRITE_POLICY,
@@ -362,6 +421,55 @@ class UsbBtHci private constructor(
             step("Write_Local_Name failed (non-fatal): ${name.reason}")
         } else {
             step("Local_Name=$localName ok")
+        }
+
+        // 12. Read_Inquiry_Response_TX_Power_Level
+        val txPower = when (val pwr = timed("Read_Inquiry_Response_TX_Power", UsbBtTiming.READ_POLICY, OP_READ_INQUIRY_RESPONSE_TX_POWER)) {
+            is HciResult.Ok -> if (pwr.value.size >= 2 && pwr.value[0] == 0.toByte()) {
+                pwr.value[1].toInt()
+            } else null
+            is HciResult.Failed -> null
+        }
+
+        // 13. Write_Extended_Inquiry_Response (crucial for iPhone to recognize CarPlay device)
+        val eirBytes = btIdentity.extendedInquiryResponse(txPower)
+        val eirResult = timed(
+            "Write_Extended_Inquiry_Response",
+            UsbBtTiming.WRITE_POLICY,
+            OP_WRITE_EXTENDED_INQUIRY_RESPONSE,
+            encodeWriteExtendedInquiryResponse(eirBytes),
+        )
+        if (eirResult is HciResult.Failed) {
+            step("Write_Extended_Inquiry_Response failed (non-fatal): ${eirResult.reason}")
+        } else {
+            step("Extended_Inquiry_Response written (${eirBytes.size} bytes)")
+        }
+
+        // 14. Write_Inquiry_Scan_Type (interlaced)
+        timed(
+            "Write_Inquiry_Scan_Type",
+            UsbBtTiming.WRITE_POLICY,
+            OP_WRITE_INQUIRY_SCAN_TYPE,
+            encodeWriteScanType(true),
+        )
+
+        // 15. Write_Page_Scan_Type (interlaced)
+        timed(
+            "Write_Page_Scan_Type",
+            UsbBtTiming.WRITE_POLICY,
+            OP_WRITE_PAGE_SCAN_TYPE,
+            encodeWriteScanType(true),
+        )
+
+        // 16. Write_Scan_Enable (Inquiry + Page)
+        val scan = timed(
+            "Write_Scan_Enable",
+            UsbBtTiming.WRITE_POLICY,
+            OP_WRITE_SCAN_ENABLE,
+            byteArrayOf(SCAN_INQUIRY_AND_PAGE.toByte()),
+        )
+        if (scan is HciResult.Failed) {
+            return HciResult.Failed("Write_Scan_Enable failed: ${scan.reason}")
         }
 
         return HciResult.Ok(InitResult(bdAddr = bdAddr, bufferSize = bufferSize, steps = steps))
