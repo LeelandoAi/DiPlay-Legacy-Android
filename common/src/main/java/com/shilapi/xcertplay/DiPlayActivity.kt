@@ -1444,6 +1444,11 @@ class DiPlayActivity : ComponentActivity() {
                 15 -> 0; 45 -> 2; 60 -> 3; else -> 1
             }) { AirPlayPersistence.saveFps(this, listOf(15, 30, 45, 60)[it]) }
             carPlayDockControl(card)
+            toggle(card, getString(R.string.settings_dock_auto_hide),
+                getString(R.string.settings_dock_auto_hide_description),
+                AirPlayPersistence.loadDockAutoHide(this)) {
+                AirPlayPersistence.saveDockAutoHide(this, it)
+            }
             addSystemBarControls(
                 hideTopBar = AirPlayPersistence.loadHideTopBar(this),
                 hideBottomBar = AirPlayPersistence.loadHideBottomBar(this),
