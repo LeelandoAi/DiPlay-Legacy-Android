@@ -48,6 +48,16 @@ class LwipNcmNative(
         }
     }
 
+    fun getSnapshot(): String {
+        val handle = nativeHandle
+        if (handle == 0L) return "lwip uninitialized"
+        return try {
+            nativeGetSnapshot(handle)
+        } catch (_: UnsatisfiedLinkError) {
+            "lwip native unavailable"
+        }
+    }
+
     /** Called from JNI worker thread when lwIP produces an Ethernet frame. */
     fun onTxFrame(frame: ByteArray) {
         onTxFrameCallback(frame)
@@ -56,5 +66,6 @@ class LwipNcmNative(
     private external fun nativeCreate(hostMac: ByteArray, linkLocal: String): Long
     private external fun nativeInputFrame(handle: Long, frame: ByteArray, length: Int)
     private external fun nativeRegisterPort(handle: Long, port: Int, isTcp: Boolean)
+    private external fun nativeGetSnapshot(handle: Long): String
     private external fun nativeDestroy(handle: Long)
 }

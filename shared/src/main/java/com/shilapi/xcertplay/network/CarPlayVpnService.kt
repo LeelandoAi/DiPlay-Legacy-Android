@@ -530,7 +530,8 @@ class CarPlayVpnService : VpnService() {
         val portHex = port.toString(16).uppercase().padStart(4, '0')
         val injected = lwipBridge?.injectedTcpPackets?.get() ?: bridge?.injectedTcpPackets?.get() ?: -1
         if (lwipBridge != null) {
-            return "userspace lwIP tcp port=$port injectedTcp=$injected"
+            val lwipSnap = lwipBridge?.tcpSnapshot() ?: "none"
+            return "userspace lwIP tcp port=$port injectedTcp=$injected $lwipSnap"
         }
         var listen = 0
         var synRecv = 0

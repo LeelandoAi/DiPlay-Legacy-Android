@@ -31,6 +31,9 @@ class LwipNcmBridge(
     @Volatile
     private var peerMac: ByteArray? = null
     private val hostLinkLocalBytes = InetAddress.getByName(hostLinkLocal).address
+    private val fe80_1_Bytes = byteArrayOf(
+        0xfe.toByte(), 0x80.toByte(), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+    )
     private val allNodesIpv6 = byteArrayOf(
         0xff.toByte(), 0x02, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01,
     )
@@ -100,20 +103,40 @@ class LwipNcmBridge(
                 val ipv6 = EthernetIpv6Codec.parseIpv6View(frame) ?: continue
                 peerMac = ipv6.sourceMac
 
-                if (EthernetIpv6Codec.isNeighborSolicitationFor(frame, ipv6.payloadOffset, ipv6.payloadLength, hostLinkLocalBytes)) {
-                    val peerIp = frame.copyOfRange(ipv6.payloadOffset + 8, ipv6.payloadOffset + 24)
-                    val isUnspecified = peerIp.all { it == 0.toByte() }
-                    val replyDstMac = if (isUnspecified) allNodesMac else ipv6.sourceMac
-                    val replyDstIp = if (isUnspecified) allNodesIpv6 else peerIp
-                    val naFrame = EthernetIpv6Codec.buildNeighborAdvertisement(
-                        hostMac = hostMac,
-                        peerMac = replyDstMac,
-                        hostIpv6 = hostLinkLocalBytes,
-                        peerIpv6 = replyDstIp,
-                        solicited = !isUnspecified,
-                    )
-                    ncm.send(naFrame, WRITE_TIMEOUT_MILLIS)
-                    continue
+                val ns = EthernetIpv6Codec.parseNeighborSolicitation(frame, ipv6.payloadOffset, ipv6.payloadLength)
+                if (ns != null) {
+                    val isDad = ns.sourceIp.all { it == 0.toByte() }
+                    val isHostAddress = ns.targetIp.contentEquals(hostLinkLocalBytes) ||
+                        ns.targetIp.contentEquals(fe80_1_Bytes)
+                    val isLinkLocal = (ns.targetIp[0].toInt() and 0xff) == 0xfe &&
+                        (ns.targetIp[1].toInt() and 0xc0) == 0x80
+                    val shouldAnswer = if (isDad) {
+                        isHostAddress
+                    } else {
+                        isHostAddress || (isLinkLocal && !ns.targetIp.contentEquals(ns.sourceIp))
+                    }
+
+                    if (shouldAnswer) {
+                        val replyDstMac = if (isDad) allNodesMac else (ns.sourceMac ?: ipv6.sourceMac)
+                        val replyDstIp = if (isDad) allNodesIpv6 else ns.sourceIp
+                        val naFrame = EthernetIpv6Codec.buildNeighborAdvertisement(
+                            hostMac = hostMac,
+                            peerMac = replyDstMac,
+                            hostIpv6 = ns.targetIp,
+                            peerIpv6 = replyDstIp,
+                            solicited = !isDad,
+                        )
+                        ncm.send(naFrame, WRITE_TIMEOUT_MILLIS)
+                        val targetStr = runCatching { InetAddress.getByAddress(ns.targetIp).hostAddress }.getOrDefault("unknown")
+                        val peerStr = runCatching { InetAddress.getByAddress(replyDstIp).hostAddress }.getOrDefault("unknown")
+                        val naMsg = "ncm replied ${if (isDad) "unsolicited" else "solicited"} NA for $targetStr to $peerStr (${replyDstMac.macString()})"
+                        Log.i(TAG, naMsg)
+                        runCatching { onDebugLog(naMsg) }
+                        continue
+                    } else {
+                        val targetStr = runCatching { InetAddress.getByAddress(ns.targetIp).hostAddress }.getOrDefault("unknown")
+                        Log.d(TAG, "ncm ignoring DAD NS for peer candidate $targetStr")
+                    }
                 }
 
                 val responder = mdnsResponder
@@ -165,6 +188,15 @@ class LwipNcmBridge(
                     runCatching { onDebugLog("ncm inbound diag ${frame.diagnosticSummary(ipv6.payloadOffset)}") }
                 }
 
+                if (inboundNextHeader == 58 && ipv6.payloadLength >= 48) {
+                    val icmpType = frame[ipv6.payloadOffset + 40].toInt() and 0xff
+                    if (icmpType == 133) {
+                        Log.i(TAG, "ncm inbound Router Solicitation from iPhone")
+                        runCatching { onDebugLog("ncm inbound RS from peer ${ipv6.sourceMac.macString()}") }
+                        sendUnsolicitedNeighborAdvertisement(force = true, targetMac = ipv6.sourceMac)
+                    }
+                }
+
                 val isTcp = inboundNextHeader == 6
                 if (isTcp) {
                     val tcpCount = injectedTcpPackets.incrementAndGet()
@@ -183,14 +215,14 @@ class LwipNcmBridge(
                         ((frame[ipv6.payloadOffset + 42].toInt() and 0xff) shl 8) or
                             (frame[ipv6.payloadOffset + 43].toInt() and 0xff)
                     } else -1
+                    val flags = if (ipv6.payloadLength >= 54) frame[ipv6.payloadOffset + 40 + 13].toInt() and 0xff else 0
+                    val isSyn = (flags and 0x02) != 0
                     val dstLocal = ipv6.payloadLength >= 40 &&
-                        frame.copyOfRange(
-                            ipv6.payloadOffset + 24,
-                            ipv6.payloadOffset + 40,
-                        ).contentEquals(hostLinkLocalBytes)
+                        (frame.copyOfRange(ipv6.payloadOffset + 24, ipv6.payloadOffset + 40).contentEquals(hostLinkLocalBytes) ||
+                         frame.copyOfRange(ipv6.payloadOffset + 24, ipv6.payloadOffset + 40).contentEquals(fe80_1_Bytes))
                     runCatching {
                         onDebugLog(
-                            "ncm lwip inject tcp bytes=${ipv6.payloadLength} dstPort=$dstPort dstLocal=$dstLocal ok",
+                            "ncm lwip inject tcp bytes=${ipv6.payloadLength} dstPort=$dstPort${if (isSyn) " [SYN]" else ""} dstLocal=$dstLocal ok",
                         )
                     }
                 }
@@ -201,6 +233,8 @@ class LwipNcmBridge(
             if (running.get()) onError(error)
         }
     }
+
+    fun tcpSnapshot(): String = lwipNative.getSnapshot()
 
     fun sendUnsolicitedNeighborAdvertisement(force: Boolean = false, targetMac: ByteArray? = null) {
         if (!running.get()) return
