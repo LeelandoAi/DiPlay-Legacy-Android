@@ -1219,10 +1219,23 @@ class CarPlayController(
             }
             wirelessChain(2, "Bluetooth enabled")
             if (!hybridBt.isEnabled()) {
-                throw IOException(
-                    "Bluetooth is turned off on this head unit; wireless CarPlay requires Bluetooth " +
-                        "for iPhone discovery. Turn on Bluetooth in the head unit system settings " +
-                        "and retry, or use wired USB instead."
+                // Issue #157: some vendor stacks (e.g. YunOS on Roewe RX5) keep Bluetooth
+                // on outside the Android framework, so the framework adapter reports
+                // disabled while the phone is already paired in the car system. When the
+                // user already entered the iPhone address manually, Bluetooth discovery
+                // is not needed, so proceed with a warning instead of failing here; the
+                // chain below already skips Bluetooth when no device is selected.
+                val savedPhone = config.wirelessBluetoothDeviceAddress
+                if (savedPhone.isNullOrBlank()) {
+                    throw IOException(
+                        "Bluetooth is turned off on this head unit; wireless CarPlay requires Bluetooth " +
+                            "for iPhone discovery. Turn on Bluetooth in the head unit system settings " +
+                            "and retry, or use wired USB instead."
+                    )
+                }
+                debugLog(
+                    "wireless Bluetooth reported off by the framework; proceeding with the " +
+                        "manually entered iPhone address (Bluetooth may be managed by a vendor stack)"
                 )
             }
             closeWirelessStack(generation = generation)
