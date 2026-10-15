@@ -1,3 +1,13 @@
+# DiPlay 0.2.63 — 2026-10-15
+
+- Automatic hotspot retry: retry starting the built-in car hotspot once after a 60-second delay if the initial boot-up attempt fails.
+- Floating dot desktop navigation: route floating dot clicks through the system launcher entry, resolving black-screen lockups when tapped without an active CarPlay session.
+- Media session protection: prevent premature link resets when the iAP2 control channel is silent but active AirPlay media is streaming.
+- Compatibility crash fix: handle custom ROM Socket-to-Closeable casting gracefully without crashing during session shutdown.
+- Wireless diagnostics: distinguish DHCP network failures from phone-side mDNS silence using passive mDNS sniffing and join probes.
+
+See [v0.2.63 release notes](docs/RELEASE-NOTES-0.2.63.md) for validation and device-testing limits.
+
 # DiPlay 0.2.62 — 2026-10-15
 
 - Preserve the VPN-owned TUN when closing a wired NCM bridge so a subsequent connection attempt can reuse it without an Already closed failure.
