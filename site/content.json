@@ -3,7 +3,7 @@
     "name": "English",
     "dir": "ltr",
     "tag": "Legacy Android compatibility edition (Android 4.2+)",
-    "badge": "v0.2.63 RELEASE",
+    "badge": "v0.2.64 RELEASE",
     "title": "Your iPhone.\nCarPlay for legacy Android head units.",
     "intro": "DiPlay Legacy brings wired and wireless CarPlay to older Android head units (Android 4.2 / API 17+), with native multi-architecture support (ARMv7, x86, ARM64).",
     "download": "Download APK",
@@ -25,13 +25,12 @@
     ],
     "adb": "Installation & connection help",
     "bssid": "ADB is not required for everyday use. APK installation options depend on the car. No manual MAC address entry.",
-    "whats": "New in v0.2.63",
+    "whats": "New in v0.2.64",
     "features": [
-      "Automatic car hotspot retry: retry once after a 60-second delay if the initial boot-up hotspot startup fails.",
-      "Floating dot navigation: route floating dot taps through system launcher icon, preventing black screen lockups when no session is active.",
-      "AirPlay media protection: do not reset the link when iAP2 control is silent if AirPlay media is streaming actively.",
-      "Custom ROM stability: prevent Socket-to-Closeable cast crashes during session shutdown.",
-      "Wireless network probe: distinguish DHCP IP failures from phone-side mDNS silence using passive mDNS sniffing."
+      "Android 4.2/4.3 compatibility fixes: graceful fallback to bundled BouncyCastle ChaCha20-Poly1305 when platform Cipher.updateAAD is unavailable (#170, #178).",
+      "Thread termination compatibility: replace HandlerThread.quitSafely with quit() on legacy Android 4.2 platforms to prevent teardown crashes.",
+      "In-app updater fixes for Android 4.x/5.x: provide PackageInstaller with world-readable file:// URIs and multi-directory storage fallback.",
+      "Added FLAG_ACTIVITY_NEW_TASK to update intents to reliably invoke the system package installer on legacy devices."
     ],
     "compat": "Before you try it",
     "compatText": "Refactored and maintained for legacy head units. Install over an existing version only when the package and signing certificate match. Upstream or Debug-signed versions may require reinstalling; save your settings and reports first.",
@@ -54,7 +53,7 @@
     "name": "العربية",
     "dir": "rtl",
     "tag": "مشروع مجتمعي مستقل",
-    "badge": "v0.2.63",
+    "badge": "v0.2.64",
     "title": "آيفونك.\nعلى شاشة سيارتك.",
     "intro": "خرائطك وموسيقاك ومحادثاتك على شاشة السيارة. يوفّر DiPlay كار بلاي سلكياً ولاسلكياً لشاشات أندرويد المتوافقة، بواجهة مألوفة من DiAuto.",
     "download": "تنزيل APK",
@@ -76,7 +75,7 @@
     ],
     "adb": "دليل التثبيت والمساعدة في الاتصال",
     "bssid": "لا تحتاج إلى ADB للاستخدام اليومي. تختلف طريقة تثبيت APK حسب السيارة. لا حاجة لإدخال عنوان MAC يدوياً.",
-    "whats": "v0.2.63",
+    "whats": "v0.2.64",
     "features": [
       "إصلاح إعادة محاولة الاتصال السلكي بالاحتفاظ بواجهة TUN التي تديرها خدمة VPN عند إغلاق جسر NCM السابق، لتجنب خطأ Already closed في المحاولة التالية."
     ],
@@ -101,7 +100,7 @@
     "name": "Русский",
     "dir": "ltr",
     "tag": "Независимый проект сообщества",
-    "badge": "v0.2.63",
+    "badge": "v0.2.64",
     "title": "Ваш iPhone.\nНа экране автомобиля.",
     "intro": "Карты, музыка и общение на экране автомобиля. DiPlay добавляет проводной и беспроводной CarPlay на совместимые головные устройства Android со знакомым интерфейсом DiAuto.",
     "download": "Скачать APK",
@@ -123,7 +122,7 @@
     ],
     "adb": "Инструкция и помощь с подключением",
     "bssid": "Для повседневной работы ADB не нужен. Способ установки APK зависит от автомобиля. Вводить MAC-адрес вручную не требуется.",
-    "whats": "v0.2.63",
+    "whats": "v0.2.64",
     "features": [
       "Исправлены повторные проводные подключения: при закрытии старого моста NCM сохраняется TUN службы VPN, чтобы следующая попытка не завершалась ошибкой Already closed."
     ],
@@ -148,7 +147,7 @@
     "name": "Українська",
     "dir": "ltr",
     "tag": "Незалежний проєкт спільноти",
-    "badge": "v0.2.63",
+    "badge": "v0.2.64",
     "title": "Ваш iPhone.\nЯк удома у вашому авто.",
     "intro": "Карти, музика й розмови на екрані автомобіля. DiPlay додає дротовий і бездротовий CarPlay на сумісні головні пристрої Android зі звичним інтерфейсом DiAuto.",
     "download": "Завантажити APK",
@@ -170,7 +169,7 @@
     ],
     "adb": "Довідка зі встановлення й підключення",
     "bssid": "Для щоденного користування ADB не потрібен. Способи встановлення APK залежать від автомобіля. Вводити MAC-адресу вручну не потрібно.",
-    "whats": "v0.2.63",
+    "whats": "v0.2.64",
     "features": [
       "Виправлено повторні дротові підключення: під час закриття старого мосту NCM зберігається TUN служби VPN, щоб наступна спроба не завершувалася помилкою Already closed."
     ],
@@ -195,7 +194,7 @@
     "name": "Español",
     "dir": "ltr",
     "tag": "Proyecto comunitario independiente",
-    "badge": "v0.2.63",
+    "badge": "v0.2.64",
     "title": "Tu iPhone.\nEn la pantalla de tu coche.",
     "intro": "Mapas, música y conversaciones en la pantalla del coche. DiPlay ofrece CarPlay por USB e inalámbrico en unidades Android compatibles, con la interfaz familiar de DiAuto.",
     "download": "Descargar APK",
@@ -217,7 +216,7 @@
     ],
     "adb": "Guía de instalación y conexión",
     "bssid": "No necesitas ADB para el uso diario. El método de instalación del APK depende del coche. No hay que introducir direcciones MAC.",
-    "whats": "v0.2.63",
+    "whats": "v0.2.64",
     "features": [
       "Corrige los reintentos de conexión por cable: conserva la interfaz TUN gestionada por la VPN al cerrar el puente NCM anterior y evita el error Already closed en el siguiente intento."
     ],
@@ -242,7 +241,7 @@
     "name": "简体中文",
     "dir": "ltr",
     "tag": "深度兼容老款车机版本 (Android 4.2+)",
-    "badge": "v0.2.63 发布版",
+    "badge": "v0.2.64 发布版",
     "title": "你的 iPhone。\n老款安卓车机的 CarPlay 方案。",
     "intro": "DiPlay Legacy 专为老款 Android 车机（最低支持 Android 4.2 / API 17）深度优化，提供有线与无线 CarPlay 互联体验，支持 ARMv7、x86、ARM64 等多种硬件芯片架构。",
     "download": "下载 APK",
@@ -264,13 +263,12 @@
     ],
     "adb": "安装与连接指南",
     "bssid": "日常使用不需要 ADB。APK 安装方式取决于车机。无需手动输入 MAC 地址。",
-    "whats": "v0.2.63 更新亮点",
+    "whats": "v0.2.64 更新亮点",
     "features": [
-      "车机开机自启热点失败后延迟 60 秒自动补试一次，大幅提升点火自动互联成功率。",
-      "悬浮球快捷入口改走桌面图标入口，彻底解决无活跃会话时点击黑屏的问题。",
-      "AirPlay 媒体链路保护：iAP2 控制通道静默时若仍有 AirPlay 媒体传输则不误复位链路。",
-      "修复部分老款车机定制 ROM 上底层 Socket 转 Closeable 异常崩溃。",
-      "无线入网探针与被动 mDNS 嗅探，精准区分手机 DHCP 分配失败与手机端 mDNS 静默。"
+      "Android 4.2/4.3 基础运行库兼容性修复：针对低版本系统 Cipher 缺失 updateAAD() 导致崩溃问题，自动平滑降级至内置 BouncyCastle ChaCha20-Poly1305 加密套件（#170, #178）。",
+      "线程安全退出降级：在 API 17 下自动将 HandlerThread.quitSafely() 降级为 quit()，彻底杜绝老旧车机断连重连时因方法缺失引发闪退。",
+      "Android 4.x/5.x 应用内自动更新调起修复：强制采用全局可读 file:// URI 协议调起系统 PackageInstaller，并支持多候选存储路径回退。",
+      "更新 Intent 显式注入 FLAG_ACTIVITY_NEW_TASK 标志位，确保在老款定制 ROM 上顺利唤起系统包安装界面。"
     ],
     "compat": "试用前请了解",
     "compatText": "本项目基于开源项目 xcertplay / DiPlay 深度重构与兼容，内置离线认证材料。同包名、同签名版本可覆盖升级；签名不同的上游或 Debug 版本可能需要重新安装，请先保存设置与诊断报告。老旧车机建议先使用 30 fps 并关闭 HEVC。",
@@ -293,7 +291,7 @@
     "name": "繁體中文（台灣）",
     "dir": "ltr",
     "tag": "深度相容老款車機版本 (Android 4.2+)",
-    "badge": "v0.2.63 發布版",
+    "badge": "v0.2.64 發布版",
     "title": "你的 iPhone。\n老款安卓車機的 CarPlay 方案。",
     "intro": "DiPlay Legacy 專為老款 Android 車機（最低支援 Android 4.2 / API 17）深度最佳化，提供有線與無線 CarPlay 互聯體驗，支援 ARMv7、x86、ARM64 等多種硬體架構。",
     "download": "下載 APK",
@@ -329,13 +327,12 @@
     "supportScope": "重點最佳化老款 Android 車機，支援各類車型有線與無線連線。",
     "newIssue": "建立新問題",
     "requires": "請安裝在車機上，支援 Android 4.2 (API 17) 及以上。老舊車機優先推薦使用有線 USB 連線（已針對全志 T3、MTK 等底層驅動與 GPU 硬體圖層渲染最佳化）。",
-    "whats": "v0.2.63 更新亮點",
+    "whats": "v0.2.64 更新亮點",
     "features": [
-      "車機開機自啟熱點失敗後延遲 60 秒自動重試一次，大幅提升點火自動互聯成功率。",
-      "懸浮球快捷入口改走桌面圖示入口，徹底解決無活躍工作階段時點擊黑屏的問題。",
-      "AirPlay 媒體連結保護：iAP2 控制通道靜默時若仍有 AirPlay 媒體傳輸則不誤重設連結。",
-      "修復部分老款車機自訂 ROM 上底層 Socket 轉 Closeable 異常崩潰。",
-      "無線入網探針與被動 mDNS 嗅探，精確區分手機 DHCP 分配失敗與手機端 mDNS 靜默。"
+      "Android 4.2/4.3 基礎執行庫相容性修復：針對舊版系統 Cipher 缺少 updateAAD() 導致崩潰問題，自動平滑降級至內建 BouncyCastle ChaCha20-Poly1305 加密套件（#170, #178）。",
+      "執行緒安全結束降級：在 API 17 下自動將 HandlerThread.quitSafely() 降級為 quit()，徹底杜絕老舊車機中斷連線重連時因方法缺少引發閃退。",
+      "Android 4.x/5.x 應用內自動更新調起修復：強制採用全域可讀 file:// URI 協定調起系統 PackageInstaller，並支援多候選儲存路徑回退。",
+      "更新 Intent 明確注入 FLAG_ACTIVITY_NEW_TASK 旗標，確保在老款自訂 ROM 上順利喚起系統安裝套件介面。"
     ],
     "diagnosticsTitle": "問題回報與日誌收集",
     "diagnosticsText": "如遇到連線異常，請在「設定 → 診斷」中儲存診斷報告，並在 GitHub Issues 中提交回報：https://github.com/programmerguohuajing/DiPlay-Legacy-Android/issues"

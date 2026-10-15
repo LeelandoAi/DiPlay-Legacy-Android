@@ -1,3 +1,10 @@
+# DiPlay 0.2.64 — 2026-10-15
+
+- Android 4.2/4.3 compatibility fixes: guard against missing Cipher.updateAAD (API 19+) by falling back to bundled BouncyCastle ChaCha20-Poly1305, and replace HandlerThread.quitSafely (API 18+) with quit() on legacy platforms (#170, #178).
+- In-app updater fix for Android 4.x/5.x: ensure PackageInstaller receives accessible file:// URIs with world-readable permissions and multi-directory fallback across diverse legacy storage layouts.
+
+See [v0.2.64 release notes](docs/RELEASE-NOTES-0.2.64.md) for validation and device-testing limits.
+
 # DiPlay 0.2.63 — 2026-10-15
 
 - Automatic hotspot retry: retry starting the built-in car hotspot once after a 60-second delay if the initial boot-up attempt fails.
