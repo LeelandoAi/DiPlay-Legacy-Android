@@ -1155,14 +1155,20 @@ class DiPlayActivity : ComponentActivity() {
         }
     }
 
-    // AndroidX doOnLayout uses View.isLaidOut (API 19) on its fast path. On API 17,
-    // defer to the platform layout observer instead, avoiding NoSuchMethodError.
     private fun View.afterLegacyLayout(action: () -> Unit) {
-        val observer = viewTreeObserver
-        if (!observer.isAlive) return
-        observer.addOnGlobalLayoutListener(object : ViewTreeObserver.OnGlobalLayoutListener {
-            override fun onGlobalLayout() {
-                if (observer.isAlive) observer.removeGlobalOnLayoutListener(this)
+        addOnLayoutChangeListener(object : View.OnLayoutChangeListener {
+            override fun onLayoutChange(
+                v: View?,
+                left: Int,
+                top: Int,
+                right: Int,
+                bottom: Int,
+                oldLeft: Int,
+                oldTop: Int,
+                oldRight: Int,
+                oldBottom: Int,
+            ) {
+                removeOnLayoutChangeListener(this)
                 action()
             }
         })

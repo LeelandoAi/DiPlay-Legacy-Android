@@ -1,6 +1,9 @@
 # DiPlay 0.2.64 — 2026-10-15
 
+- Multi-USB port coexistence & peripheral isolation: automatically distinguish iPhone and USB Bluetooth dongles from dashcams (UVC) and storage drives (UDisk) on multi-USB head units (e.g. Allwinner T3).
 - Android 4.2/4.3 compatibility fixes: guard against missing Cipher.updateAAD (API 19+) by falling back to bundled BouncyCastle ChaCha20-Poly1305, and replace HandlerThread.quitSafely (API 18+) with quit() on legacy platforms (#170, #178).
+- Userspace lwIP TCP/IP stack for wired CarPlay: direct NCM USB frame relaying via userspace lwIP, bypassing system network stack limitations on legacy Android head units (Allwinner T3, MTK, etc.).
+- Native JNI NCM relay (`lwip_ncm_relay.c`): zero-copy network buffer forwarding between USB host endpoints and CarPlay TCP/UDP services.
 - In-app updater fix for Android 4.x/5.x: ensure PackageInstaller receives accessible file:// URIs with world-readable permissions and multi-directory fallback across diverse legacy storage layouts.
 
 See [v0.2.64 release notes](docs/RELEASE-NOTES-0.2.64.md) for validation and device-testing limits.
