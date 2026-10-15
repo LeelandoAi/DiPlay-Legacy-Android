@@ -1258,6 +1258,15 @@ class CarPlayHostActivity : ComponentActivity() {
         if (assignedAction != WheelZoomKeys.Action.PASS) return true
         if (downOrUp && assignedKey) return super.dispatchKeyEvent(event)
 
+        // Media keys that reach this window (typical on aftermarket head units whose wheel
+        // keys are not routed to the media session) go to the iPhone as CarPlay media HID
+        // presses, mirroring the GKUI/ECARX broadcast path. Consuming them here keeps the
+        // media session from seeing the same press a second time.
+        if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0 &&
+            CarPlayMediaKeys.handleWheelMediaKey(event.keyCode)) {
+            return true
+        }
+
         // Keep DiPlay's existing steering-wheel/voice-key Siri handling intact.
         if (!CarPlayMediaButton.opensSiri(event.keyCode)) return super.dispatchKeyEvent(event)
         if (event.action == KeyEvent.ACTION_DOWN) legacySiriPresses.add(physicalKey)
@@ -5435,6 +5444,10 @@ internal object CarPlayBackgroundSession {
         controller = null
         sink = null
         if (!keepOwner) { stopAction = null; owner = null }
+        // hasSession() checks `stopping` too; a stop() whose callback never ran
+        // would otherwise block updates forever (#184).
+        stopping = false
+        stopWaiters.clear()
         active = false
         width = 0
         height = 0
