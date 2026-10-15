@@ -8,6 +8,7 @@ import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 
 enum class VideoCodec { H264, H265 }
@@ -39,6 +40,7 @@ class ScreenStream(
     private val closed = AtomicBoolean(false)
     private val frameCounter = AtomicLong(0)
     private val firstFrameLogged = AtomicBoolean(false)
+    private val decryptFailures = AtomicInteger(0)
     private var server: ServerSocket? = null
     private var socket: Socket? = null
     private var thread: Thread? = null
@@ -101,11 +103,27 @@ class ScreenStream(
             OP_VIDEO_FRAME -> {
                 val payload = if (body.size >= ScreenCodec.TAG_SIZE) {
                     val start = System.nanoTime()
-                    ScreenCodec.decryptFrame(key, frameCounter.get(), header, body)
-                        .also {
-                            stats.decrypted(System.nanoTime() - start, body.size)
-                            frameCounter.incrementAndGet()
-                        }
+                    try {
+                        ScreenCodec.decryptFrame(key, frameCounter.get(), header, body)
+                            .also {
+                                stats.decrypted(System.nanoTime() - start, body.size)
+                                frameCounter.incrementAndGet()
+                                decryptFailures.set(0)
+                            }
+                    } catch (error: Exception) {
+                        // A single corrupt frame (transient USB bit error, #180) must not
+                        // kill the whole screen stream: the per-frame nonce is an
+                        // independent counter, so consuming this frame's nonce keeps us in
+                        // sync with the iPhone and the stream survives. A systematic
+                        // desync still fails every frame, so cap consecutive skips and end
+                        // the stream as before once the cap is hit.
+                        val consecutive = decryptFailures.incrementAndGet()
+                        frameCounter.incrementAndGet()
+                        Log.w(TAG, "video frame auth failed, skipping frame (consecutive=$consecutive)", error)
+                        onDiagnostic("video frame auth failed, skipped consecutive=$consecutive")
+                        if (consecutive >= MAX_CONSECUTIVE_DECRYPT_FAILURES) throw error
+                        return
+                    }
                 } else {
                     body
                 }
@@ -146,6 +164,12 @@ class ScreenStream(
         const val OP_VIDEO_FRAME = 0
         const val OP_VIDEO_CONFIG = 1
         const val MAX_BODY = 8 * 1024 * 1024
+        /**
+         * Consecutive corrupt video frames tolerated before giving up: a transient
+         * error skips one frame, a systematic nonce/key desync still ends the
+         * stream exactly as before (#180).
+         */
+        const val MAX_CONSECUTIVE_DECRYPT_FAILURES = 30
     }
 }
 
