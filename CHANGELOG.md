@@ -1,3 +1,10 @@
+# DiPlay 0.2.63 (Pre-release) — 2026-10-15
+
+- Add pure USB Host Bluetooth stack support for external dongles (UGREEN CM390 RTL8761B/RTL8761BUV, TP-Link UB500, CSR8510 A10, etc.).
+- Add intelligent peripheral filtering for multi-USB car stereos (e.g. Allwinner T3): accurately excludes dashcam (UVC video), USB flash drives, and hubs from Bluetooth detection.
+- Add multi-device candidate discovery and tolerant detachment handling so dashcam reboots/unplugs do not interrupt active Bluetooth sessions.
+- Merge latest mainline fixes for car hotspot auto-retry and floating dot navigation.
+
 # DiPlay 0.2.62 — 2026-10-15
 
 - Preserve the VPN-owned TUN when closing a wired NCM bridge so a subsequent connection attempt can reuse it without an Already closed failure.
