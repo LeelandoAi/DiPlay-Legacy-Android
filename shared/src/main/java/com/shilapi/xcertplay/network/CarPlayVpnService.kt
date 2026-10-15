@@ -351,9 +351,17 @@ class CarPlayVpnService : VpnService() {
         active.set(true)
         val generation = ++attachGeneration
         return try {
+            // Same scope treatment as wired (P2-4): if the hotspot hands
+            // out an IPv6 link-local, bind it scoped to the WiFi interface
+            // so the kernel matches the iPhone's scoped SYN.
+            val scopedBind = if (bindAddress is java.net.Inet6Address && bindAddress.isLinkLocalAddress) {
+                AirPlaySocketBinder.scopedLinkLocal(bindAddress)
+            } else {
+                bindAddress
+            }
             startAirPlayServer(
                 generation,
-                AirPlayAttachment(bindAddress, config, identity, pairings, mfi, listener, media,
+                AirPlayAttachment(scopedBind, config, identity, pairings, mfi, listener, media,
                     additionalBindAddresses, listenerIdentity),
             )
             AttachResult.Started

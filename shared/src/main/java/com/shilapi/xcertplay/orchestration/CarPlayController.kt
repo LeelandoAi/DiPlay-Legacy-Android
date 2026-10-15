@@ -1397,6 +1397,11 @@ class CarPlayController(
                     }
                 }
             }
+            // Bring up the Hybrid stacks too. The system BluetoothAdapter
+            // above does NOT enable the USB dongle stack: on T3 the dongle
+            // is the only data-capable Bluetooth, and without this call it
+            // stays disabled and wireless can never reach it (P0-1).
+            runCatching { hybridAdapter.enable() }
             val device = try {
                 if (adapter != null && (adapter.isEnabled || hybridAdapter.isEnabled())) {
                     selectWirelessBluetoothDevice(adapter)
@@ -2521,7 +2526,9 @@ class CarPlayController(
             type.equals("disable-bluetooth", ignoreCase = true)
 
     private fun startWirelessHotspot(generation: Int): WirelessHotspotInfo {
-        if (config.wirelessHotspotMode == WirelessHotspotMode.WIFI_P2P && Build.VERSION.SDK_INT < 28) {
+        // Use realSdkInt(): T3 fakes SDK_INT=27, so the raw value would
+        // disagree with the realSdkInt() check below (P1-5).
+        if (config.wirelessHotspotMode == WirelessHotspotMode.WIFI_P2P && realSdkInt() < 28) {
             return startLegacyWifiDirectWithFallback(generation)
         }
         val readyDeadline = System.nanoTime() + WirelessStartupPolicy.HOTSPOT_READY_MILLIS * 1_000_000
@@ -2547,7 +2554,7 @@ class CarPlayController(
                     "${result.diagnostic}. Open the car hotspot settings and connect again.")
             }
         }
-        if (Build.VERSION.SDK_INT > 28 && hotspotMode == WirelessHotspotMode.MANUAL &&
+        if (realSdkInt() > 28 && hotspotMode == WirelessHotspotMode.MANUAL &&
             com.shilapi.xcertplay.network.CarHotspotStatus.isEnabled(appContext) == false
         ) {
             throw WirelessStartupException(WirelessStartupFailure.HOTSPOT_CONFIGURATION,
