@@ -53,6 +53,8 @@ import com.shilapi.xcertplay.network.LegacyWifiP2pGroupManager
 import com.shilapi.xcertplay.network.ManualHotspotManager
 import com.shilapi.xcertplay.network.ExistingWifiManager
 import com.shilapi.xcertplay.network.WifiP2pGroupManager
+import com.shilapi.xcertplay.network.MdnsSniffer
+import com.shilapi.xcertplay.network.PhoneProbe
 import com.shilapi.xcertplay.network.WifiScanPause
 import com.shilapi.xcertplay.network.WirelessHotspotInfo
 import com.shilapi.xcertplay.network.WirelessHotspotBackend
@@ -1163,6 +1165,57 @@ class CarPlayController(
         executor.execute { runWireless(generation) }
     }
 
+    /**
+     * 上报设备加入/离开 Wi-Fi Direct 组（port 自 ding2548-ui/DiPlay@main）。
+     *
+     * 两种无线失败在其他日志里看起来一模一样——"手机没加入我们的 Wi-Fi"和
+     * "手机加入了但没连 AirPlay"都以没有 `airplay connection accepted from`
+     * 收尾，但修法完全相反。这几行是唯一能区分它们的证据，因此在整个
+     * 建连窗口内运行，每次变化都记一笔。
+     */
+    private fun startWirelessClientWatch(
+        generation: Int,
+        manager: WirelessHotspotManager,
+        interfaceName: String?,
+    ) {
+        Thread(
+            {
+                var lastReported = -1
+                val deadline = System.nanoTime() +
+                    WIRELESS_CLIENT_WATCH_MILLIS * 1_000_000L
+                while (
+                    !closed &&
+                    generation == wirelessGeneration.get() &&
+                    System.nanoTime() < deadline
+                ) {
+                    val count = manager.joinedClientCount()
+                    if (count != null && count != lastReported) {
+                        val justJoined = count > 0 && lastReported == 0
+                        lastReported = count
+                        debugLog(
+                            if (count == 0) {
+                                "wireless group clients=0；手机尚未加入本机 Wi-Fi"
+                            } else {
+                                "wireless group clients=$count；已有设备加入本机 Wi-Fi"
+                            },
+                        )
+                        if (justJoined) {
+                            // 手机刚入网：它到底拿没拿到 IP、mDNS 栈活没活？
+                            // 没有这一问，"手机无流量"分不清是 DHCP 失败还是手机侧 CarPlay 策略静默。
+                            PhoneProbe.start(interfaceName) { debugLog(it) }
+                        }
+                    }
+                    try {
+                        Thread.sleep(WIRELESS_CLIENT_WATCH_POLL_MILLIS)
+                    } catch (_: InterruptedException) {
+                        return@Thread
+                    }
+                }
+            },
+            "xcertplay-wifi-clients",
+        ).apply { isDaemon = true }.start()
+    }
+
     private fun restartWireless() {
         val generation = synchronized(wirelessResourceLock) {
             firstTcpWatchdog?.terminate()
@@ -1327,6 +1380,7 @@ class CarPlayController(
                 ),
             )
             onStatus(CarPlayStatus.WaitingForPairedIphone)
+            hotspot?.let { startWirelessClientWatch(generation, it, hotspotInfo.interfaceName) }
             stage = "Bluetooth device selection"
 
             val adapter = bluetoothAdapter
@@ -1465,6 +1519,9 @@ class CarPlayController(
             diagnostics.start()
             wirelessChain(7, "Bonjour/mDNS advertisement started")
             debugLog("wireless Bonjour services started mode=interface iface=${hotspotInfo.interfaceName ?: "unknown"}")
+            // 被动观察手机侧 mDNS 流量：回答"手机的查询/广播到底有没有到达我们"。
+            // 与 Bonjour 客户端并行，只收不发；失败只记一行日志，不影响建连。
+            MdnsSniffer.start(hotspotInfo.interfaceName) { debugLog(it) }
             if (isStaleWirelessRun(generation)) {
                 return
             }
@@ -2764,6 +2821,7 @@ class CarPlayController(
             val activeBonjour = bonjour
             bonjour = null
             if (activeBonjour != null) closeBestEffort("Bonjour") { activeBonjour.close() }
+            closeBestEffort("mdns sniff") { MdnsSniffer.stop() }
 
             val activeHotspot = hotspot
             hotspot = null
@@ -3175,6 +3233,9 @@ class CarPlayController(
         private const val DEVICE_AVAILABILITY_POLL_INTERVAL_MILLIS = 2_000L
         private const val NO_IPHONE_DEVICES_LOG_INTERVAL_MILLIS = 10_000L
         private const val WIRELESS_HANDOFF_TIMEOUT_MILLIS = 45_000L
+        /** 无线建连持续观察设备入网的时长（port 自 ding2548-ui/DiPlay@main）。 */
+        private const val WIRELESS_CLIENT_WATCH_MILLIS = 120_000L
+        private const val WIRELESS_CLIENT_WATCH_POLL_MILLIS = 2_000L
         private const val RFCOMM_CONNECT_TIMEOUT_MILLIS = 15_000L
         private const val MAXIMUM_REENUMERATION_ATTEMPTS = 2
         private const val EXECUTOR_CLOSE_TIMEOUT_MILLIS = 2_000L

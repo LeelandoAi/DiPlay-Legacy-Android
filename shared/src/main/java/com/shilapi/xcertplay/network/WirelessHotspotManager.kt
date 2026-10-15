@@ -51,6 +51,9 @@ interface WirelessHotspotManager : Closeable {
 
     /** Counts reported by the framework, when available; never contains station identities. */
     fun connectionDiagnosticSnapshot(): String = "association=not_exposed"
+
+    /** 已加入的设备数（只报数量，不含身份）；后端取不到时返回 null（port 自 ding2548-ui/DiPlay@main）。 */
+    fun joinedClientCount(): Int? = null
 }
 
 /**
