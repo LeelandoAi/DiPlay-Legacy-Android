@@ -95,6 +95,9 @@ static err_t ncm_linkoutput(struct netif *netif, struct pbuf *p) {
             pbuf_copy_partial(p, buf, total_len, 0);
             (*env)->ReleaseByteArrayElements(env, jframe, buf, 0);
 
+            LOGI("ncm_linkoutput sending frame len=%d proto=0x%02x%02x next=0x%02x", 
+                 total_len, (unsigned char)buf[12], (unsigned char)buf[13], 
+                 total_len >= 21 ? (unsigned char)buf[20] : 0);
             (*env)->CallVoidMethod(env, ctx->bridge_obj_global, ctx->on_tx_frame_mid, jframe);
         }
         (*env)->DeleteLocalRef(env, jframe);
@@ -230,21 +233,21 @@ static err_t tcp_relay_accept(void *arg, struct tcp_pcb *newpcb, err_t err) {
         return ERR_CLSD;
     }
 
-    int flags = fcntl(fd, F_GETFL, 0);
-    fcntl(fd, F_SETFL, flags | O_NONBLOCK);
-
     struct sockaddr_in sin;
     memset(&sin, 0, sizeof(sin));
     sin.sin_family = AF_INET;
-    sin.sin_port = htons(port);
+    sin.sin_port = htons((uint16_t)port);
     sin.sin_addr.s_addr = inet_addr("127.0.0.1");
 
     int res = connect(fd, (struct sockaddr *)&sin, sizeof(sin));
-    if (res < 0 && errno != EINPROGRESS) {
+    if (res < 0) {
         LOGE("Failed to connect to 127.0.0.1:%d, errno=%d", port, errno);
         close(fd);
         return ERR_CONN;
     }
+
+    int flags = fcntl(fd, F_GETFL, 0);
+    fcntl(fd, F_SETFL, flags | O_NONBLOCK);
 
     conn->active = 1;
     conn->lwip_pcb = newpcb;
@@ -446,8 +449,10 @@ Java_com_shilapi_xcertplay_network_LwipNcmNative_nativeInputFrame(
 
     (*env)->GetByteArrayRegion(env, frameArr, 0, length, (jbyte *)p->payload);
 
+    LOGI("nativeInputFrame input frame len=%d", length);
     pthread_mutex_lock(&ctx->lock);
     err_t err = ctx->ncm_netif.input(p, &ctx->ncm_netif);
+    LOGI("netif.input returned err=%d", err);
     if (err != ERR_OK) {
         pbuf_free(p);
     }

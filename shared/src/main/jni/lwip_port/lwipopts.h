@@ -23,7 +23,7 @@
 
 #define LWIP_IPV4                       1
 #define LWIP_IPV6                       1
-#define LWIP_IPV6_SCOPES                1
+#define LWIP_IPV6_SCOPES                0
 #define LWIP_IPV6_SCOPES_DEBUG          0
 #define LWIP_IPV6_NUM_ADDRESSES         3
 #define LWIP_IPV6_FORWARD               0

@@ -3,7 +3,7 @@ package com.shilapi.xcertplay.network
 /**
  * JNI bindings for userspace lwIP NCM relay.
  */
-internal class LwipNcmNative(
+class LwipNcmNative(
     private val onTxFrameCallback: (ByteArray) -> Unit,
 ) {
     private var nativeHandle: Long = 0
