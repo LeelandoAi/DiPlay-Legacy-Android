@@ -294,6 +294,7 @@ class CarPlayController(
 
     private var permissionCloseable: Closeable? = null
     private var attachCloseable: Closeable? = null
+    private var detachCloseable: Closeable? = null
     private var ch341PermissionCloseable: Closeable? = null
     private var vpnLatch = CountDownLatch(1)
     private val teardownComplete = CountDownLatch(1)
@@ -497,6 +498,7 @@ class CarPlayController(
         if (config.transport == CarPlayTransport.WIRED) {
             permissionCloseable = iphoneHost.registerPermissionReceiver(::onIphonePermission)
             attachCloseable = iphoneHost.registerAttachReceiver(::onIphoneAttached)
+            detachCloseable = iphoneHost.registerDetachReceiver(::onIphoneDetached)
         }
         startMfi()
     }
@@ -2167,9 +2169,11 @@ class CarPlayController(
                     if (closed || phase != Phase.REENUMERATION || generation != availabilityPollGeneration.get()) return
                     val elapsed = (System.nanoTime() - started) / 1_000_000
                     val found = runCatching { iphoneHost.discover().firstOrNull() }.getOrNull()
-                    if (found != null && (found.deviceName != previous.deviceName || elapsed >= 2500)) {
+                    val hasCarPlayConfig = found != null && runCatching { IphoneCarPlayConfiguration.find(found) != null }.getOrDefault(false)
+                    val isNewDevice = found != null && (found.deviceId != previous.deviceId || found.deviceName != previous.deviceName)
+                    if (found != null && (hasCarPlayConfig || isNewDevice || elapsed >= 2500)) {
                         availabilityPollGeneration.incrementAndGet()
-                        connectionDiagnostic("USB transition polling found device after ${elapsed}ms")
+                        connectionDiagnostic("USB transition polling found device after ${elapsed}ms (hasCarPlayConfig=$hasCarPlayConfig isNewDevice=$isNewDevice)")
                         requestIphonePermission(found)
                         return
                     }
@@ -2197,6 +2201,29 @@ class CarPlayController(
         }
     }
 
+    private fun onIphoneDetached(device: UsbDevice) {
+        debugLog(
+            "wired USB detached: vid=0x${device.vendorId.toString(16)} pid=0x${device.productId.toString(16)} dev=${device.deviceName}",
+        )
+        if (closed) return
+        when (phase) {
+            Phase.REENUMERATION -> {
+                debugLog("wired iPhone detached during expected re-enumeration transition")
+            }
+            Phase.IPHONE, Phase.DATAPATHS, Phase.CONTROL -> {
+                debugLog("wired iPhone detached; resetting to waiting for iPhone")
+                mainHandler.post {
+                    if (!closed) {
+                        availabilityPollGeneration.incrementAndGet()
+                        onStatus(CarPlayStatus.WaitingForIphone)
+                        scheduleAvailabilityPoll(Phase.IPHONE, ::checkIphoneAvailability)
+                    }
+                }
+            }
+            else -> Unit
+        }
+    }
+
     /**
      * Throttled diagnostic for the "iPhone not found" wait loop: records what the OS actually
      * sees on the USB bus, so a future report instantly distinguishes "the iPhone never
@@ -2207,12 +2234,23 @@ class CarPlayController(
         val now = SystemClock.elapsedRealtime()
         if (now - lastNoIphoneDevicesLogNanos < NO_IPHONE_DEVICES_LOG_INTERVAL_MILLIS) return
         lastNoIphoneDevicesLogNanos = now
-        val summary = runCatching {
-            usbManager?.deviceList?.values?.joinToString(" | ") {
-                "vid=0x${it.vendorId.toString(16)} pid=0x${it.productId.toString(16)}"
-            }.orEmpty()
-        }.getOrDefault("<unavailable>")
-        debugLog("wired waiting for iPhone; visible USB devices: [$summary]")
+        val devices = runCatching { usbManager?.deviceList?.values?.toList().orEmpty() }.getOrDefault(emptyList())
+        val summary = devices.joinToString(" | ") { dev ->
+            val isApple = dev.vendorId == IphoneUsbMatcher.APPLE_VENDOR_ID
+            val typeHint = when {
+                isApple -> "Apple/iPhone"
+                dev.deviceClass == 0x0e || (0 until dev.interfaceCount).any { dev.getInterface(it).interfaceClass == 0x0e } -> "Dashcam/Video"
+                dev.deviceClass == 0x08 || (0 until dev.interfaceCount).any { dev.getInterface(it).interfaceClass == 0x08 } -> "MassStorage/UDisk"
+                else -> "Peripheral"
+            }
+            "vid=0x${dev.vendorId.toString(16)} pid=0x${dev.productId.toString(16)} ($typeHint dev=${dev.deviceName})"
+        }
+        val hasNonApplePeripheral = devices.any { it.vendorId != IphoneUsbMatcher.APPLE_VENDOR_ID }
+        if (hasNonApplePeripheral) {
+            debugLog("wired waiting for iPhone on available USB port; non-Apple peripheral(s) detected: [$summary]")
+        } else {
+            debugLog("wired waiting for iPhone; visible USB devices: [$summary]")
+        }
     }
 
     private fun scheduleAvailabilityPoll(phase: Phase, check: () -> Unit) {
@@ -3041,7 +3079,7 @@ class CarPlayController(
     }
 
     private fun closeReceivers() {
-        listOfNotNull(permissionCloseable, attachCloseable, ch341PermissionCloseable).forEach {
+        listOfNotNull(permissionCloseable, attachCloseable, detachCloseable, ch341PermissionCloseable).forEach {
             try {
                 it.close()
             } catch (_: Exception) {
@@ -3050,6 +3088,7 @@ class CarPlayController(
         }
         permissionCloseable = null
         attachCloseable = null
+        detachCloseable = null
         ch341PermissionCloseable = null
     }
 
