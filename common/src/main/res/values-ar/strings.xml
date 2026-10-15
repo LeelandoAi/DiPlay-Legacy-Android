@@ -661,6 +661,8 @@
     <string name="settings_car_bluetooth_mac_dialog_message">أدخل عنوان MAC لبلوتوث السيارة (مثل AA:BB:CC:DD:EE:FF). ستجده في iPhone الإعدادات ← بلوتوث ← (i) أو إعدادات السيارة.</string>
     <string name="settings_car_bluetooth_mac_clear">تلقائي / مسح</string>
     <string name="settings_bluetooth_diagnostic">تشخيص البلوتوث</string>
+    <string name="settings_log_output_title">إخراج السجل</string>
+    <string name="settings_log_output_subtitle">أوقفه لتقليل الحمل على الوحدات الرئيسية القديمة. يسري مفعوله بعد إعادة تشغيل التطبيق؛ أعد تفعيله عند الحاجة إلى تشخيص مشكلة.</string>
     <string name="settings_car_bluetooth_mac_invalid">يرجى إدخال عنوان MAC سداسي عشري صالح من 12 خانة.</string>
     <string name="settings_harman_fullscreen_experimental">ملء شاشة Harman (تجريبي)</string>
     <string name="settings_harman_fullscreen_experimental_description">يتيح لـ CarPlay شغل منطقة اللوحة الجانبية الأصلية في وحدات Harman المدعومة. يُطبّق عند فتح نافذة CarPlay التالية؛ وقد تظهر أخطاء على برامج ثابتة أخرى.</string>

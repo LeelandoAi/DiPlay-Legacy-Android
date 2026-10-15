@@ -4068,6 +4068,9 @@ class CarPlayHostActivity : ComponentActivity() {
             }
 
             override fun onDebugLog(message: String) {
+                // Session log output switch (issue #186): drop everything before formatting,
+                // redaction or file IO to spare old head units the collection cost.
+                if (!LoggingGate.enabled) return
                 if (DiagnosticRedactor.redact(message) == null) return
                 if (message.startsWith(CarPlayController.CONNECTION_DIAGNOSTIC_PREFIX + " ")) {
                     // Retain old-controller teardown evidence without accepting its UI/session state.

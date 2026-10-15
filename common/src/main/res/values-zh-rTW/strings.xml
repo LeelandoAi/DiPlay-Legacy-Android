@@ -721,6 +721,8 @@
     <string name="settings_car_bluetooth_mac_dialog_message">輸入車機真實藍牙 MAC 位址（例如 AA:BB:CC:DD:EE:FF）。可在 iPhone「設定 → 藍牙 → (i)」或車機藍牙設定中檢視。</string>
     <string name="settings_car_bluetooth_mac_clear">清除 / 自動探測</string>
     <string name="settings_bluetooth_diagnostic">藍牙診斷</string>
+    <string name="settings_log_output_title">日誌輸出</string>
+    <string name="settings_log_output_subtitle">關閉可降低老車機負載，重新啟動應用後生效；需要定位問題時再開啟。</string>
     <string name="settings_car_bluetooth_mac_invalid">請輸入有效的 12 位十六進位 MAC 位址。</string>
     <string name="report_no_usb_drive">未偵測到可寫入的USB隨身碟。請連接USB隨身碟後重試，或將報告儲存至車機。</string>
     <string name="report_auto_save_locations">自動儲存至所有可寫入位置</string>

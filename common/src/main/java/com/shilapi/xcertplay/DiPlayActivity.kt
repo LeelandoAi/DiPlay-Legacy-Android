@@ -1322,6 +1322,13 @@ class DiPlayActivity : ComponentActivity() {
                 }, "diplay-view-log").start()
             }
             card.addView(viewLogButton, matchButton(10, 60))
+            // 日志输出开关（issue #186）：关闭后不再收集会话日志，降低老车机负载；重启应用后生效。
+            toggle(
+                card,
+                getString(R.string.settings_log_output_title),
+                getString(R.string.settings_log_output_subtitle),
+                AirPlayPersistence.loadDebugLogsEnabled(this),
+            ) { AirPlayPersistence.saveDebugLogsEnabled(this, it) }
             exportButton = button(if (exportInProgress) getString(R.string.saving_report) else getString(R.string.save_diagnostic_report), false) {
                 exportDiagnostics()
             }.apply { isEnabled = !exportInProgress }
