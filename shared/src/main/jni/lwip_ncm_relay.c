@@ -231,10 +231,36 @@ static void tcp_relay_err(void *arg, err_t err) {
     }
 }
 
+static void flush_loopback_to_lwip(TcpRelayConn *conn) {
+    if (conn == NULL || !conn->active || conn->lwip_pcb == NULL) return;
+    if (conn->loopback_to_lwip_len > 0) {
+        u16_t snd_buf = tcp_sndbuf(conn->lwip_pcb);
+        if (snd_buf > 0) {
+            u16_t to_send = (u16_t)conn->loopback_to_lwip_len;
+            if (to_send > snd_buf) {
+                to_send = snd_buf;
+            }
+            err_t wr_err = tcp_write(conn->lwip_pcb, conn->loopback_to_lwip_buf, to_send, TCP_WRITE_FLAG_COPY);
+            if (wr_err == ERR_OK) {
+                tcp_output(conn->lwip_pcb);
+                conn->loopback_to_lwip_len -= (int)to_send;
+                if (conn->loopback_to_lwip_len > 0) {
+                    memmove(conn->loopback_to_lwip_buf, conn->loopback_to_lwip_buf + to_send, (size_t)conn->loopback_to_lwip_len);
+                }
+            } else if (wr_err != ERR_MEM) {
+                LOGW("tcp_write failed: %d", wr_err);
+            }
+        }
+    }
+}
+
 static err_t tcp_relay_sent(void *arg, struct tcp_pcb *tpcb, u16_t len) {
     (void)tpcb;
     (void)len;
-    (void)arg;
+    TcpRelayConn *conn = (TcpRelayConn *)arg;
+    if (conn != NULL && conn->active) {
+        flush_loopback_to_lwip(conn);
+    }
     return ERR_OK;
 }
 
@@ -344,26 +370,21 @@ static void check_and_forward_loopback(LwipContext *ctx) {
         TcpRelayConn *conn = &ctx->tcp_conns[i];
         if (!conn->active || conn->loopback_fd < 0 || conn->lwip_pcb == NULL) continue;
 
-        uint8_t buf[2048];
-        ssize_t n = read(conn->loopback_fd, buf, sizeof(buf));
-        if (n > 0) {
-            u16_t snd_buf = tcp_sndbuf(conn->lwip_pcb);
-            if (snd_buf >= n) {
-                err_t wr_err = tcp_write(conn->lwip_pcb, buf, (u16_t)n, TCP_WRITE_FLAG_COPY);
-                if (wr_err == ERR_OK) {
-                    tcp_output(conn->lwip_pcb);
-                } else {
-                    LOGW("tcp_write failed: %d", wr_err);
-                }
-            } else {
-                LOGW("tcp_sndbuf low (%d < %zd)", snd_buf, n);
+        flush_loopback_to_lwip(conn);
+
+        int space = BUFFER_SIZE - conn->loopback_to_lwip_len;
+        if (space > 0) {
+            ssize_t n = read(conn->loopback_fd, conn->loopback_to_lwip_buf + conn->loopback_to_lwip_len, (size_t)space);
+            if (n > 0) {
+                conn->loopback_to_lwip_len += (int)n;
+                flush_loopback_to_lwip(conn);
+            } else if (n == 0) {
+                LOGI("loopback_fd EOF for port %d", conn->lwip_pcb ? conn->lwip_pcb->local_port : 0);
+                close_tcp_relay_conn(ctx, conn);
+            } else if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK) {
+                LOGW("loopback_fd read error %d", errno);
+                close_tcp_relay_conn(ctx, conn);
             }
-        } else if (n == 0) {
-            LOGI("loopback_fd EOF for port %d", conn->lwip_pcb->local_port);
-            close_tcp_relay_conn(ctx, conn);
-        } else if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK) {
-            LOGW("loopback_fd read error %d", errno);
-            close_tcp_relay_conn(ctx, conn);
         }
     }
 }
@@ -529,9 +550,11 @@ static void *lwip_worker_thread(void *arg) {
 
         for (int i = 0; i < MAX_RELAY_CONNS; i++) {
             if (ctx->tcp_conns[i].active && ctx->tcp_conns[i].loopback_fd >= 0) {
-                FD_SET(ctx->tcp_conns[i].loopback_fd, &rfds);
-                if (ctx->tcp_conns[i].loopback_fd > max_fd) {
-                    max_fd = ctx->tcp_conns[i].loopback_fd;
+                if (ctx->tcp_conns[i].loopback_to_lwip_len < BUFFER_SIZE) {
+                    FD_SET(ctx->tcp_conns[i].loopback_fd, &rfds);
+                    if (ctx->tcp_conns[i].loopback_fd > max_fd) {
+                        max_fd = ctx->tcp_conns[i].loopback_fd;
+                    }
                 }
             }
         }
@@ -632,10 +655,8 @@ Java_com_shilapi_xcertplay_network_LwipNcmNative_nativeInputFrame(
 
     (*env)->GetByteArrayRegion(env, frameArr, 0, length, (jbyte *)p->payload);
 
-    LOGI("nativeInputFrame input frame len=%d", length);
     pthread_mutex_lock(&ctx->lock);
     err_t err = ctx->ncm_netif.input(p, &ctx->ncm_netif);
-    LOGI("netif.input returned err=%d", err);
     if (err != ERR_OK) {
         pbuf_free(p);
     }

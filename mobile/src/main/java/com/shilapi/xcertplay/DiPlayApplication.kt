@@ -16,6 +16,7 @@ class DiPlayApplication : MultiDexApplication() {
     override fun onCreate() {
         super.onCreate()
         setupCrashHandler()
+        FloatingDotOverlay.restoreIfEnabled(this)
     }
 
     private fun setupCrashHandler() {

@@ -229,6 +229,7 @@ class CarPlayController(
 
     @Volatile private var closed = false
     @Volatile private var phase = Phase.IDLE
+    @Volatile private var wiredAborted = false
     @Volatile private var ch341Host: Ch341UsbHost? = null
     @Volatile private var mfiSession: MfiSession? = null
     @Volatile private var mux: Iap2UsbMuxHost? = null
@@ -2202,6 +2203,13 @@ class CarPlayController(
                 availabilityPollGeneration.incrementAndGet()
                 requestIphonePermission(device)
             }
+            Phase.DATAPATHS, Phase.CONTROL -> {
+                debugLog("wired iPhone attached while in $phase; aborting stale session and requesting permission")
+                phase = Phase.IPHONE
+                abortActiveWiredSession()
+                availabilityPollGeneration.incrementAndGet()
+                requestIphonePermission(device)
+            }
             else -> Unit
         }
     }
@@ -2217,6 +2225,8 @@ class CarPlayController(
             }
             Phase.IPHONE, Phase.DATAPATHS, Phase.CONTROL -> {
                 debugLog("wired iPhone detached; resetting to waiting for iPhone")
+                phase = Phase.IPHONE
+                abortActiveWiredSession()
                 mainHandler.post {
                     if (!closed) {
                         availabilityPollGeneration.incrementAndGet()
@@ -2226,6 +2236,31 @@ class CarPlayController(
                 }
             }
             else -> Unit
+        }
+    }
+
+    private fun abortActiveWiredSession() {
+        wiredAborted = true
+        debugLog("wired abortActiveWiredSession: closing active wired session, csm, mux, and vpn")
+        closeBestEffort("activeSession") {
+            val session = activeSession
+            activeSession = null
+            session?.close()
+        }
+        closeBestEffort("CSM") {
+            val session = csm
+            csm = null
+            session?.close()
+        }
+        closeBestEffort("USBMUX") {
+            val muxHost = mux
+            mux = null
+            muxHost?.close()
+        }
+        if (config.transport == CarPlayTransport.WIRED) {
+            closeBestEffort("VPN/NCM") {
+                vpnService?.detach()
+            }
         }
     }
 
@@ -2334,6 +2369,7 @@ class CarPlayController(
 
     private fun runStack(usbSession: Iap2UsbSession, ncm: NcmUsbBridge) {
         phase = Phase.CONTROL
+        wiredAborted = false
         var ncmOwnedLocally = true
         try {
             if (closed) return
@@ -2507,19 +2543,23 @@ class CarPlayController(
                 // arriving; the NTDA3's iPhone stops sending iAP2 frames for minutes at a time.
                 airPlayDataRecent = { AirPlayMediaActivity.recent() },
             )
+            if (wiredAborted || closed || phase == Phase.IPHONE) {
+                debugLog("wired control loop finished after abort/detach")
+                return
+            }
             onStatus(
                 when (result.terminal) {
                     Iap2WiredControlTerminal.TIMED_OUT ->
                         CarPlayStatus.Failed("Wired CarPlay control timed out at ${result.stage}; StartSession sent=${result.carPlayStartSessionsSent}")
                     Iap2WiredControlTerminal.CHANNEL_CLOSED ->
                         CarPlayStatus.Failed("CarPlay control channel closed")
-                    // Issue #84/#61: the iPhone went quiet long after StartSession 鈥?the old
-                    // code spun here forever on "鎺у埗閫氶亾杩愯涓?. Fail loudly so the existing
+                    // Issue #84/#61: the iPhone went quiet long after StartSession — the old
+                    // code spun here forever on "控制通道运行中". Fail loudly so the existing
                     // reconnect path rebuilds the link instead.
                     Iap2WiredControlTerminal.PEER_SILENT ->
                         CarPlayStatus.Failed("Wired CarPlay peer silent; resetting link")
                     // Issue #95: iPhone alive on iAP2 but never opened the AirPlay TCP
-                    // connection 鈥?fail fast instead of idling until USB wedges.
+                    // connection — fail fast instead of idling until USB wedges.
                     // Issue #155/#123: capture the kernel TCP-table snapshot here so the
                     // report shows whether injected SYNs ever reached the TCP stack.
                     Iap2WiredControlTerminal.NO_AIRPLAY_TCP -> {
@@ -2531,6 +2571,11 @@ class CarPlayController(
                 },
             )
         } catch (error: Throwable) {
+            if (wiredAborted || closed || phase == Phase.IPHONE) {
+                debugLog("wired bring-up aborted due to detach: ${error.message}")
+                if (!ncmOwnedLocally) vpnService?.detach()
+                return
+            }
             debugLog("wired bring-up failed", error)
             if (!ncmOwnedLocally) vpnService?.detach()
             fail(error)
