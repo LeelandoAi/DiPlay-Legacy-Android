@@ -75,6 +75,12 @@
         <service android:name="com.shilapi.xcertplay.DiPlaySessionService"
             android:exported="false" android:foregroundServiceType="connectedDevice|microphone|location" />
 
+        <!-- 蓝牙诊断：独立 :btprobe 进程跑 RFCOMM 探针，卡住可丢弃（port 自 xiaomiren/DiPlay） -->
+        <service android:name="com.shilapi.xcertplay.BluetoothProbeService"
+            android:process=":btprobe" android:exported="false" />
+        <activity android:name="com.shilapi.xcertplay.BluetoothDiagnosticActivity"
+            android:exported="false" android:theme="@style/Theme.Xcertplay" />
+
         <activity
             android:name="com.shilapi.xcertplay.CarPlayHostActivity"
             android:taskAffinity="${applicationId}.carplay"
