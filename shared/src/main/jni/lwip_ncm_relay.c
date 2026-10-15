@@ -78,6 +78,18 @@ typedef struct {
     pthread_t thread;
     int running;
     int wake_pipe[2];
+
+    uint32_t stats_rx_frames;
+    uint32_t stats_rx_bytes;
+    uint32_t stats_rx_tcp;
+    uint32_t stats_rx_tcp_syn;
+    uint32_t stats_rx_udp;
+    uint32_t stats_rx_icmp6;
+    uint32_t stats_rx_drops;
+    uint32_t stats_tx_frames;
+    uint32_t stats_tx_bytes;
+    uint32_t stats_tcp_conns_accepted;
+    uint32_t stats_tcp_conns_closed;
 } LwipContext;
 
 static err_t ncm_netif_output_ip6(struct netif *netif, struct pbuf *p, const ip6_addr_t *ip6addr) {
@@ -90,6 +102,9 @@ static err_t ncm_linkoutput(struct netif *netif, struct pbuf *p) {
 
     int total_len = p->tot_len;
     if (total_len <= 0 || total_len > 65535) return ERR_VAL;
+
+    ctx->stats_tx_frames++;
+    ctx->stats_tx_bytes += (uint32_t)total_len;
 
     JNIEnv *env = NULL;
     int attached = 0;
@@ -137,6 +152,7 @@ static err_t ncm_netif_init(struct netif *netif) {
 static void close_tcp_relay_conn(LwipContext *ctx, TcpRelayConn *conn) {
     if (!conn->active) return;
     conn->active = 0;
+    ctx->stats_tcp_conns_closed++;
     if (conn->loopback_fd >= 0) {
         close(conn->loopback_fd);
         conn->loopback_fd = -1;
@@ -330,6 +346,7 @@ static err_t tcp_relay_accept(void *arg, struct tcp_pcb *newpcb, err_t err) {
     conn->lwip_pcb = newpcb;
     conn->loopback_fd = fd;
     conn->loopback_to_lwip_len = 0;
+    ctx->stats_tcp_conns_accepted++;
 
     tcp_arg(newpcb, conn);
     tcp_recv(newpcb, tcp_relay_recv);
@@ -610,6 +627,14 @@ Java_com_shilapi_xcertplay_network_LwipNcmNative_nativeCreate(
     netif_add_ip6_address(&ctx->ncm_netif, &ctx->host_ip6, &idx);
     netif_ip6_addr_set_state(&ctx->ncm_netif, idx, IP6_ADDR_VALID);
 
+    ip6_addr_t ip6_alt;
+    ip6addr_aton("fe80::1", &ip6_alt);
+    if (!ip6_addr_cmp(&ctx->host_ip6, &ip6_alt)) {
+        s8_t idx1 = 1;
+        netif_add_ip6_address(&ctx->ncm_netif, &ip6_alt, &idx1);
+        netif_ip6_addr_set_state(&ctx->ncm_netif, idx1, IP6_ADDR_VALID);
+    }
+
     ctx->running = 1;
     pthread_create(&ctx->thread, NULL, lwip_worker_thread, ctx);
 
@@ -632,11 +657,35 @@ Java_com_shilapi_xcertplay_network_LwipNcmNative_nativeInputFrame(
 
     (*env)->GetByteArrayRegion(env, frameArr, 0, length, (jbyte *)p->payload);
 
+    ctx->stats_rx_frames++;
+    ctx->stats_rx_bytes += (uint32_t)length;
+    if (length >= 14) {
+        uint8_t *raw = (uint8_t *)p->payload;
+        uint16_t ethertype = (((uint16_t)raw[12]) << 8) | raw[13];
+        if (ethertype == 0x86dd && length >= 54) {
+            uint8_t next_hdr = raw[20]; // 14 + 6
+            if (next_hdr == 6) { // TCP
+                ctx->stats_rx_tcp++;
+                if (length >= 68) {
+                    uint8_t tcp_flags = raw[67]; // 14 + 40 + 13
+                    if (tcp_flags & 0x02) { // SYN
+                        ctx->stats_rx_tcp_syn++;
+                    }
+                }
+            } else if (next_hdr == 17) {
+                ctx->stats_rx_udp++;
+            } else if (next_hdr == 58) {
+                ctx->stats_rx_icmp6++;
+            }
+        }
+    }
+
     LOGI("nativeInputFrame input frame len=%d", length);
     pthread_mutex_lock(&ctx->lock);
     err_t err = ctx->ncm_netif.input(p, &ctx->ncm_netif);
     LOGI("netif.input returned err=%d", err);
     if (err != ERR_OK) {
+        ctx->stats_rx_drops++;
         pbuf_free(p);
     }
     pthread_mutex_unlock(&ctx->lock);
@@ -715,4 +764,36 @@ Java_com_shilapi_xcertplay_network_LwipNcmNative_nativeDestroy(
     }
 
     free(ctx);
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_shilapi_xcertplay_network_LwipNcmNative_nativeGetSnapshot(
+        JNIEnv *env, jobject thiz, jlong handle) {
+    (void)thiz;
+    LwipContext *ctx = (LwipContext *)(intptr_t)handle;
+    if (ctx == NULL) return (*env)->NewStringUTF(env, "lwip handle null");
+
+    pthread_mutex_lock(&ctx->lock);
+    int active_tcp = 0;
+    for (int i = 0; i < MAX_RELAY_CONNS; i++) {
+        if (ctx->tcp_conns[i].active) active_tcp++;
+    }
+    int active_udp = 0;
+    for (int i = 0; i < MAX_UDP_RELAYS; i++) {
+        if (ctx->udp_relays[i].active) active_udp++;
+    }
+
+    char buf[512];
+    snprintf(buf, sizeof(buf),
+             "listeners=%d tcp_act=%d (accepted=%u closed=%u) udp_relays=%d "
+             "rx_frames=%u (tcp=%u syn=%u udp=%u icmp6=%u drop=%u) tx_frames=%u tx_bytes=%u",
+             ctx->num_listen_pcbs,
+             active_tcp, ctx->stats_tcp_conns_accepted, ctx->stats_tcp_conns_closed,
+             active_udp,
+             ctx->stats_rx_frames, ctx->stats_rx_tcp, ctx->stats_rx_tcp_syn,
+             ctx->stats_rx_udp, ctx->stats_rx_icmp6, ctx->stats_rx_drops,
+             ctx->stats_tx_frames, ctx->stats_tx_bytes);
+    pthread_mutex_unlock(&ctx->lock);
+
+    return (*env)->NewStringUTF(env, buf);
 }
