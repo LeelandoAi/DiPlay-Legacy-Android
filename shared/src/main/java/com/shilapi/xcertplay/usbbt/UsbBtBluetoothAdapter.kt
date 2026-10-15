@@ -67,6 +67,7 @@ class UsbBtBluetoothAdapter(
 
     private var hci: UsbBtHci? = null
     private var pairingAgent: UsbBtPairingAgent? = null
+    @Volatile private var activeDevice: UsbDevice? = null
     private var localBdAddr: String? = null
     private var dongleLabel: String? = null
 
@@ -127,43 +128,55 @@ class UsbBtBluetoothAdapter(
         if (isEnabled()) return true
         ensureUsbReceivers()
         val mgr = usbManager ?: return false
-        val dongle = runCatching { detector.findDongles(mgr).firstOrNull() }.getOrNull()
-            ?: run {
-                Log.w(TAG, "enable: no dongle found")
-                return false
+        val candidates = runCatching { detector.findDongles(mgr) }.getOrElse { emptyList() }
+        if (candidates.isEmpty()) {
+            Log.w(TAG, "enable: no dongle found")
+            return false
+        }
+
+        // Try candidate dongles that already have permission first.
+        val (granted, ungranted) = candidates.partition { mgr.hasPermission(it.device) }
+
+        for (dongle in granted) {
+            val opened = UsbBtHci.open(mgr, dongle.device)
+            if (opened == null) {
+                Log.w(TAG, "enable: UsbBtHci.open failed for ${dongle.vendorLabel}")
+                continue
             }
-        if (!mgr.hasPermission(dongle.device)) {
+            val firmwareLoader = UsbBtFirmwareLoader(opened, appContext.assets)
+            when (val init = opened.initialize(firmwareLoader = firmwareLoader)) {
+                is UsbBtHci.HciResult.Failed -> {
+                    Log.w(TAG, "enable: HCI init failed for ${dongle.vendorLabel}: ${init.reason}")
+                    runCatching { opened.close() }
+                    continue
+                }
+                is UsbBtHci.HciResult.Ok -> {
+                    activeDevice = dongle.device
+                    localBdAddr = init.value.bdAddr
+                    dongleLabel = dongle.vendorLabel
+                    initSteps = init.value.steps
+                    hci = opened
+                    pairingAgent = UsbBtPairingAgent(opened, linkKeys, pairingUiCallback).also { it.start() }
+                    startPump(opened)
+                    awaitingPermission.set(false)
+                    Log.i(TAG, "USB Bluetooth enabled: bdAddr=$localBdAddr vendor=${dongle.vendorLabel}")
+                    return true
+                }
+            }
+        }
+
+        // If none of the permitted devices could be initialized, request permission for the best ungranted candidate.
+        if (ungranted.isNotEmpty()) {
+            val target = ungranted.first()
             if (awaitingPermission.compareAndSet(false, true)) {
-                Log.i(TAG, "enable: requesting USB permission for dongle")
-                detector.ensurePermission(mgr, dongle)
+                Log.i(TAG, "enable: requesting USB permission for candidate: ${target.vendorLabel}")
+                detector.ensurePermission(mgr, target)
             }
             return false
         }
-        awaitingPermission.set(false)
-        val opened = UsbBtHci.open(mgr, dongle.device) ?: return false
-        // Wire up the firmware loader: dongles that ship with empty patchram
-        // ignore HCI_Reset until their vendor blob is uploaded. Previously
-        // initialize() was called without a loader, so the upload path in
-        // UsbBtHci was dead code and even a bundled firmware file was never
-        // used (P2-5).
-        val firmwareLoader = UsbBtFirmwareLoader(opened, appContext.assets)
-        when (val init = opened.initialize(firmwareLoader = firmwareLoader)) {
-            is UsbBtHci.HciResult.Failed -> {
-                Log.w(TAG, "enable: HCI init failed: ${init.reason}")
-                runCatching { opened.close() }
-                return false
-            }
-            is UsbBtHci.HciResult.Ok -> {
-                localBdAddr = init.value.bdAddr
-                dongleLabel = dongle.vendorLabel
-                initSteps = init.value.steps
-            }
-        }
-        hci = opened
-        pairingAgent = UsbBtPairingAgent(opened, linkKeys, pairingUiCallback).also { it.start() }
-        startPump(opened)
-        Log.i(TAG, "USB Bluetooth enabled: bdAddr=$localBdAddr vendor=${dongle.vendorLabel}")
-        return true
+
+        Log.w(TAG, "enable: all candidate dongles failed to open/initialize")
+        return false
     }
 
     /** HCI init step log, exposed for diagnostics. */
@@ -223,9 +236,19 @@ class UsbBtBluetoothAdapter(
                             @Suppress("DEPRECATION")
                             intent.getParcelableExtra(UsbManager.EXTRA_DEVICE) as? UsbDevice
                         }
-                        if (device != null && detector.identify(device) != null) {
-                            Log.i(TAG, "dongle detached; shutting down USB Bluetooth")
-                            shutdown()
+                        if (device != null) {
+                            val currentActive = synchronized(lock) { activeDevice }
+                            val isTargetDongle = if (currentActive != null) {
+                                device.deviceId == currentActive.deviceId || device.deviceName == currentActive.deviceName
+                            } else {
+                                detector.identify(device) != null
+                            }
+                            if (isTargetDongle) {
+                                Log.i(TAG, "dongle detached (device=${device.deviceName}); shutting down USB Bluetooth")
+                                shutdown()
+                            } else {
+                                Log.i(TAG, "non-active USB peripheral detached (device=${device.deviceName}); ignoring")
+                            }
                         }
                     }
                 }
@@ -427,6 +450,7 @@ class UsbBtBluetoothAdapter(
         synchronized(lock) {
             hci?.let { runCatching { it.close() } }
             hci = null
+            activeDevice = null
             localBdAddr = null
             initSteps = emptyList()
         }
@@ -444,7 +468,9 @@ class UsbBtBluetoothAdapter(
 
     /** Snapshot for diagnostics (LegacyConnectionProbe). */
     fun diagnosticState(): String {
-        val dongle = runCatching {
+        val dongle = synchronized(lock) {
+            activeDevice?.let { dev -> detector.identify(dev) }
+        } ?: runCatching {
             usbManager?.let { detector.findDongles(it).firstOrNull() }
         }.getOrNull()
         return buildString {

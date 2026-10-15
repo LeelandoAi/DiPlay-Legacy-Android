@@ -93,11 +93,107 @@ class UsbBtDongleDetector(private val appContext: Context) {
             "$packageName${PERMISSION_ACTION_SUFFIX}"
 
         private const val PERMISSION_ACTION_SUFFIX = ".USB_BT_PERMISSION"
+
+        // Standard USB Class Codes (defined locally for Android API < 21 compatibility)
+        const val USB_CLASS_PER_INTERFACE = 0x00
+        const val USB_CLASS_AUDIO = 0x01
+        const val USB_CLASS_COMM = 0x02
+        const val USB_CLASS_HID = 0x03
+        const val USB_CLASS_PHYSICAL = 0x05
+        const val USB_CLASS_STILL_IMAGE = 0x06
+        const val USB_CLASS_PRINTER = 0x07
+        const val USB_CLASS_MASS_STORAGE = 0x08
+        const val USB_CLASS_HUB = 0x09
+        const val USB_CLASS_CDC_DATA = 0x0A
+        const val USB_CLASS_CSCID = 0x0B
+        const val USB_CLASS_CONTENT_SEC = 0x0C
+        const val USB_CLASS_VIDEO = 0x0E
+        const val USB_CLASS_WIRELESS_CONTROLLER = 0xE0
+        const val USB_CLASS_MISC = 0xEF
+        const val USB_CLASS_APP_SPEC = 0xFE
+        const val USB_CLASS_VENDOR_SPEC = 0xFF
+
+        const val APPLE_VENDOR_ID = 0x05AC
+
+        /**
+         * Device classes that indicate non-Bluetooth peripherals (cameras, mass storage, hubs, etc.).
+         */
+        val NON_BLUETOOTH_DEVICE_CLASSES: Set<Int> = setOf(
+            USB_CLASS_AUDIO,
+            USB_CLASS_COMM,
+            USB_CLASS_HID,
+            USB_CLASS_PHYSICAL,
+            USB_CLASS_STILL_IMAGE,
+            USB_CLASS_PRINTER,
+            USB_CLASS_MASS_STORAGE,
+            USB_CLASS_HUB,
+            USB_CLASS_CDC_DATA,
+            USB_CLASS_VIDEO,
+        )
+
+        /**
+         * Interface classes that definitively rule out pure Bluetooth dongles.
+         * Dashcams expose USB_CLASS_VIDEO (0x0E); USB flash drives expose USB_CLASS_MASS_STORAGE (0x08).
+         */
+        val NON_BLUETOOTH_INTERFACE_CLASSES: Set<Int> = setOf(
+            USB_CLASS_VIDEO,
+            USB_CLASS_MASS_STORAGE,
+            USB_CLASS_HUB,
+            USB_CLASS_PRINTER,
+            USB_CLASS_STILL_IMAGE,
+        )
+
+        /**
+         * Known Bluetooth dongle (VID, PID) pairs. Used strictly as a fallback
+         * when a dongle lacks the 0xE0/0x01/0x01 class code descriptors.
+         * Under no circumstance should a peripheral be assumed Bluetooth based
+         * on VID alone.
+         */
+        val KNOWN_BT_DEVICE_PIDS: Set<Pair<Int, Int>> = setOf(
+            // Realtek RTL8761B / RTL8761BUV / RTL8723 / RTL8821 / RTL8822 / RTL8852
+            0x2b89 to 0x8771, // UGREEN CM390 (RTL8761B)
+            0x2b89 to 0x6275, // UGREEN CM390 (RTL8761BUV)
+            0x2357 to 0x0604, // TP-Link UB500
+            0x0b05 to 0x190e, // ASUS USB-BT500
+            0x7392 to 0xc611, // Edimax BT-8500
+            0x0bda to 0x8771, // Realtek generic RTL8761B
+            0x0bda to 0x8772,
+            0x0bda to 0xb761,
+            0x0bda to 0x8761,
+            0x0bda to 0xa761,
+            0x0bda to 0x8763,
+            0x0bda to 0x8821,
+            0x0bda to 0xb822,
+            0x0bda to 0xc821,
+            0x0bda to 0x8852,
+            0x0bda to 0x885b,
+            0x0bda to 0xb85b,
+            0x0bda to 0xa85b,
+            // CSR8510 A10
+            0x0a12 to 0x0001,
+            // Broadcom BCM20702
+            0x0a5c to 0x21e8,
+            0x0a5c to 0x21ec,
+            0x0a5c to 0x21e1,
+            0x0a5c to 0x21f3,
+            // Intel Wireless-AC / AX Bluetooth
+            0x8087 to 0x0025,
+            0x8087 to 0x0026,
+            0x8087 to 0x0029,
+            0x8087 to 0x0032,
+            0x8087 to 0x0aaa,
+            // Actions Semiconductor ATS2851
+            0x10d6 to 0x1101,
+        )
     }
 
     /**
      * Scan [usbManager] for Bluetooth dongles. Never throws; returns an empty
      * list when the device list is unavailable.
+     *
+     * Candidates are prioritized by:
+     * 1. Already possessing USB permission (avoids prompting if another device is active)
+     * 2. Identified via standard USB Bluetooth class code (0xE0/0x01/0x01)
      */
     fun findDongles(usbManager: UsbManager): List<Dongle> {
         val devices = runCatching { usbManager.deviceList.values.toList() }
@@ -105,39 +201,80 @@ class UsbBtDongleDetector(private val appContext: Context) {
                 Log.w(TAG, "USB device list unavailable", it)
                 return emptyList()
             }
-        return devices.mapNotNull { device ->
-            identify(device)?.also {
-                Log.i(
-                    TAG,
-                    "Bluetooth dongle: vid=0x${device.vendorId.toString(16)} " +
-                        "pid=0x${device.productId.toString(16)} vendor=${it.vendorLabel} " +
-                        "viaClassCode=${it.viaClassCode}",
-                )
+        return devices
+            .mapNotNull { device ->
+                identify(device)?.also {
+                    Log.i(
+                        TAG,
+                        "Bluetooth dongle candidate: vid=0x${device.vendorId.toString(16)} " +
+                            "pid=0x${device.productId.toString(16)} vendor=${it.vendorLabel} " +
+                            "viaClassCode=${it.viaClassCode} hasPermission=${usbManager.hasPermission(device)}",
+                    )
+                }
             }
-        }
+            .sortedWith(
+                compareByDescending<Dongle> { usbManager.hasPermission(it.device) }
+                    .thenByDescending { it.viaClassCode }
+            )
     }
 
     /**
-     * Returns null when [device] is not a Bluetooth dongle. The Apple VID is
-     * never matched, so an iPhone on the same bus is ignored.
+     * Returns null when [device] is not a Bluetooth dongle.
+     *
+     * In multi-USB car environments (e.g. Allwinner T3 with dashcam on port 1 and
+     * Bluetooth on port 2), this strictly distinguishes Bluetooth controllers from:
+     * - Apple devices (iPhone/iPod on the car bus)
+     * - Dashcams / UVC webcams (USB_CLASS_VIDEO 0x0E)
+     * - USB flash drives / SD card readers (USB_CLASS_MASS_STORAGE 0x08)
+     * - USB Hubs (USB_CLASS_HUB 0x09)
      */
     fun identify(device: UsbDevice): Dongle? {
-        val vendor = KNOWN_BT_VENDORS[device.vendorId]
-        if (hasBluetoothClassCode(device)) {
+        // 1. Explicitly ignore Apple devices
+        if (device.vendorId == APPLE_VENDOR_ID) {
+            return null
+        }
+
+        // 2. Check for standard Bluetooth class code
+        val hasBtClass = hasBluetoothClassCode(device)
+
+        // 3. Exclude non-Bluetooth peripheral classes (dashcams, mass storage, hubs)
+        if (!hasBtClass && hasNonBluetoothClass(device)) {
+            return null
+        }
+
+        if (hasBtClass) {
             return Dongle(
                 device = device,
                 vendorLabel = resolveVendorLabel(device.vendorId, viaClassCode = true),
                 viaClassCode = true,
             )
         }
-        if (vendor != null) {
+
+        // 4. Fallback: match only against verified (VID, PID) pairs.
+        // Never match on vendor ID alone, which would mistakenly classify UGREEN/Lenovo/ASUS dashcams as dongles.
+        val vidPid = device.vendorId to device.productId
+        if (vidPid in KNOWN_BT_DEVICE_PIDS) {
             return Dongle(
                 device = device,
                 vendorLabel = resolveVendorLabel(device.vendorId, viaClassCode = false, productId = device.productId),
                 viaClassCode = false,
             )
         }
+
         return null
+    }
+
+    private fun hasNonBluetoothClass(device: UsbDevice): Boolean {
+        if (device.deviceClass in NON_BLUETOOTH_DEVICE_CLASSES) {
+            return true
+        }
+        for (i in 0 until device.interfaceCount) {
+            val intf = device.getInterface(i)
+            if (intf.interfaceClass in NON_BLUETOOTH_INTERFACE_CLASSES) {
+                return true
+            }
+        }
+        return false
     }
 
     private fun hasBluetoothClassCode(device: UsbDevice): Boolean {
