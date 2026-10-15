@@ -33,6 +33,9 @@ class DiPlayApkInstallerTest {
         assertTrue(DiPlayApkInstaller.supportsFileInstall(19, "4.4.4"))
         assertTrue(DiPlayApkInstaller.supportsFileInstall(17, "4.2.2"))
         assertFalse(DiPlayApkInstaller.supportsFileInstall(28, "4.4.4"))
+        assertTrue(DiPlayApkInstaller.isLegacyInstall(19, "4.4.4"))
+        assertTrue(DiPlayApkInstaller.isLegacyInstall(28, "4.4.4"))
+        assertFalse(DiPlayApkInstaller.isLegacyInstall(28, "9.0"))
     }
 
     @Test fun verifiedPublicCopyUsesFreshFileAndRechecksBytes() {
@@ -50,6 +53,19 @@ class DiPlayApkInstallerTest {
             assertNotEquals(original.absolutePath, destination.absolutePath)
             destination.delete()
         }
+        original.delete()
+    }
+
+    @Test fun legacyInstallFallsBackToVerifiedApkWhenPublicCopyIsNull() {
+        val context = RuntimeEnvironment.getApplication()
+        val original = File(context.cacheDir, "DiPlay-v9.9.9.apk")
+        original.writeBytes(ByteArray(1024))
+        val result = DiPlayApkInstaller.launch(context, original, null)
+        assertTrue(result.launched)
+        val nextIntent = org.robolectric.Shadows.shadowOf(context).nextStartedActivity
+        assertNotNull(nextIntent)
+        assertEquals("file", nextIntent.data?.scheme)
+        assertEquals(Uri.fromFile(original), nextIntent.data)
         original.delete()
     }
 }

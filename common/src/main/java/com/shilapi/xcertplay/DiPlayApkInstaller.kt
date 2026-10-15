@@ -25,13 +25,20 @@ internal object DiPlayApkInstaller {
     internal fun supportsFileInstall(sdk: Int, release: String): Boolean =
         sdk in 17..23
 
+    internal fun isLegacyInstall(sdk: Int, release: String): Boolean =
+        supportsFileInstall(sdk, release) ||
+            release.startsWith("4.") ||
+            release.startsWith("5.")
+
     internal fun contentIntents(uri: Uri): List<Intent> = listOf(
         Intent(Intent.ACTION_VIEW).apply {
             setDataAndType(uri, APK_MIME)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         },
         Intent(Intent.ACTION_INSTALL_PACKAGE).apply {
             data = uri
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         },
     )
@@ -39,11 +46,27 @@ internal object DiPlayApkInstaller {
     internal fun fileIntents(file: File): List<Intent> = listOf(
         Intent(Intent.ACTION_VIEW).apply {
             setDataAndType(Uri.fromFile(file), APK_MIME)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         },
         Intent(Intent.ACTION_INSTALL_PACKAGE).apply {
-            data = Uri.fromFile(file)
+            setDataAndType(Uri.fromFile(file), APK_MIME)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         },
     )
+
+    internal fun makeWorldReadable(file: File) {
+        runCatching {
+            file.setReadable(true, false)
+            var current: File? = file.parentFile
+            while (current != null && current.parentFile != null) {
+                current.setReadable(true, false)
+                current.setExecutable(true, false)
+                current = current.parentFile
+            }
+        }
+    }
 
     /**
      * Copy the verified update to an old Android user's Downloads folder.
@@ -55,14 +78,28 @@ internal object DiPlayApkInstaller {
      * still world-readable on these API levels and need no storage permission.
      */
     fun createPublicCopy(context: Context, verifiedApk: File, verify: (File) -> Unit): File? {
-        if (!supportsFileInstall(Build.VERSION.SDK_INT, Build.VERSION.RELEASE.orEmpty()) &&
-            !Build.VERSION.RELEASE.orEmpty().startsWith("4.") &&
-            !Build.VERSION.RELEASE.orEmpty().startsWith("5.")) return null
-        val candidates = listOfNotNull(
-            runCatching { Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS) }.getOrNull(),
-            runCatching { context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) }.getOrNull(),
-            runCatching { context.externalCacheDir }.getOrNull(),
-        )
+        if (!isLegacyInstall(Build.VERSION.SDK_INT, Build.VERSION.RELEASE.orEmpty())) return null
+        val candidates = linkedSetOf<File>().apply {
+            runCatching { Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS) }.getOrNull()?.let { add(it) }
+            runCatching { Environment.getExternalStorageDirectory() }.getOrNull()?.let {
+                add(File(it, "Download"))
+                add(File(it, "Downloads"))
+                add(it)
+            }
+            runCatching { context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) }.getOrNull()?.let { add(it) }
+            runCatching { context.getExternalFilesDir(null) }.getOrNull()?.let { add(it) }
+            runCatching { context.externalCacheDir }.getOrNull()?.let { add(it) }
+            add(File("/sdcard/Download"))
+            add(File("/sdcard"))
+            add(File("/storage/emulated/0/Download"))
+            add(File("/storage/emulated/0"))
+            add(File("/storage/sdcard0/Download"))
+            add(File("/storage/sdcard0"))
+            add(File("/mnt/sdcard"))
+            // Fall back to app-internal dirs if external storage is unmounted
+            add(File(context.filesDir, "updates"))
+            add(File(context.cacheDir, "updates"))
+        }
         for (destination in candidates) {
             val copy = tryCreateCopy(verifiedApk, verify, destination) ?: continue
             return copy
@@ -103,10 +140,11 @@ internal object DiPlayApkInstaller {
             if (count != verifiedApk.length() || target.length() != count ||
                 !sourceDigest.digest().contentEquals(copyDigest.digest())
             ) throw IOException("Shared APK copy differs from the verified download")
+            makeWorldReadable(target)
             verify(target)
             return target
         } catch (error: Exception) {
-            Log.w(TAG, "Unable to make a verified public Downloads copy", error)
+            Log.w(TAG, "Unable to make a verified public Downloads copy in $directory", error)
             destination?.delete()
             return null
         }
@@ -126,10 +164,17 @@ internal object DiPlayApkInstaller {
         } catch (error: Exception) {
             Log.w(TAG, "FileProvider update URI unavailable", error)
         }
-        // Android 4.4's PackageInstaller often understands file:// but not content://.
-        if (publicCopy?.isFile == true && supportsFileInstall(Build.VERSION.SDK_INT,
-                Build.VERSION.RELEASE.orEmpty())) {
-            intents.addAll(0, fileIntents(publicCopy))
+        // Android 4.x/5.x PackageInstaller requires file:// URIs, not FileProvider content://.
+        if (isLegacyInstall(Build.VERSION.SDK_INT, Build.VERSION.RELEASE.orEmpty())) {
+            val legacyFiles = linkedSetOf<File>().apply {
+                if (publicCopy?.isFile == true) add(publicCopy)
+                if (verifiedApk.isFile) add(verifiedApk)
+            }
+            val legacyIntents = legacyFiles.flatMap { file ->
+                makeWorldReadable(file)
+                fileIntents(file)
+            }
+            intents.addAll(0, legacyIntents)
         }
         var failure: Exception? = null
         for (intent in intents) {
