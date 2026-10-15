@@ -152,6 +152,10 @@ object AirPlayCrypto {
         useDirectBuffers: Boolean = Build.VERSION.SDK_INT >= 31,
     ): ByteArray? {
         val state = platformState.get() ?: return null
+        // Cipher.updateAAD() only exists on API 19+; calling it on Android 4.2/4.3
+        // throws NoSuchMethodError and kills the calling thread (#170, #178).
+        // Use the bundled BouncyCastle ChaCha20-Poly1305 for AAD there.
+        if (aad.isNotEmpty() && Build.VERSION.SDK_INT < Build.VERSION_CODES.KITKAT) return null
         return try {
             val cipher = state.cipher
             cipher.init(mode, SecretKeySpec(key, "ChaCha20"), IvParameterSpec(nonce))
@@ -172,6 +176,10 @@ object AirPlayCrypto {
             // Dalvik on API 17 fails to verify this class (VerifyError, #157)
             // and the app crashes at startup. Match by class name instead.
             if (failure.javaClass.name == "javax.crypto.AEADBadTagException") throw failure
+            null
+        } catch (failure: LinkageError) {
+            // Defensive: a missing platform crypto API (e.g. updateAAD on API < 19)
+            // degrades to the BouncyCastle fallback instead of killing the thread.
             null
         }
     }

@@ -1,11 +1,17 @@
+# DiPlay 0.2.64 — 2026-10-15
+
+- Android 4.2/4.3 compatibility fixes: guard against missing Cipher.updateAAD (API 19+) by falling back to bundled BouncyCastle ChaCha20-Poly1305, and replace HandlerThread.quitSafely (API 18+) with quit() on legacy platforms (#170, #178).
+- In-app updater fix for Android 4.x/5.x: ensure PackageInstaller receives accessible file:// URIs with world-readable permissions and multi-directory fallback across diverse legacy storage layouts.
+
+See [v0.2.64 release notes](docs/RELEASE-NOTES-0.2.64.md) for validation and device-testing limits.
+
 # DiPlay 0.2.63 — 2026-10-15
 
-- Pure Android USB Host Bluetooth stack: direct support for external USB dongles (UGREEN CM390 RTL8761B/RTL8761BUV, TP-Link UB500, ASUS USB-BT500, CSR8510 A10, etc.) without requiring system Bluetooth or root permissions.
-- Firmware auto-loading & fallback: automatic Realtek firmware uploading with graceful fallback to onboard ROM when firmware asset is absent.
-- Multi-USB car stereo peripheral co-existence: intelligent exclusion of dashcams (UVC video 0x0E), mass storage (0x08), and hubs (0x09) from Bluetooth probing.
-- Detachment tolerance & candidate discovery: dashcam reboots or disconnections no longer disrupt ongoing Bluetooth sessions; prioritizes devices with granted USB permissions.
-- Pairing & link key persistence: Just Works and Numeric Comparison pairing with encrypted link key storage across reboots.
-- Mainline stability sync: automatic 60s retry for failed boot hotspot start, and floating dot navigation shortcut fix.
+- Automatic hotspot retry: retry starting the built-in car hotspot once after a 60-second delay if the initial boot-up attempt fails.
+- Floating dot desktop navigation: route floating dot clicks through the system launcher entry, resolving black-screen lockups when tapped without an active CarPlay session.
+- Media session protection: prevent premature link resets when the iAP2 control channel is silent but active AirPlay media is streaming.
+- Compatibility crash fix: handle custom ROM Socket-to-Closeable casting gracefully without crashing during session shutdown.
+- Wireless diagnostics: distinguish DHCP network failures from phone-side mDNS silence using passive mDNS sniffing and join probes.
 
 See [v0.2.63 release notes](docs/RELEASE-NOTES-0.2.63.md) for validation and device-testing limits.
 

@@ -719,7 +719,7 @@ internal class ParkingOutput(width: Int, height: Int) {
             }, android.os.Handler(thread.looper))
             surface = reader.surface
         } catch (error: Throwable) {
-            thread.quitSafely()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR2) thread.quitSafely() else thread.quit()
             throw error
         }
     }
@@ -733,7 +733,7 @@ internal class ParkingOutput(width: Int, height: Int) {
                 }
             }
         } finally {
-            thread.quitSafely()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR2) thread.quitSafely() else thread.quit()
         }
     }
 }

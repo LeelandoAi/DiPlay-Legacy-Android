@@ -199,7 +199,7 @@ internal class LegacyWifiP2pGroupManager(
         activeChannel?.let { ch ->
             runCatching { ch.javaClass.getMethod("close").invoke(ch) }
         }
-        thread?.quitSafely()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR2) thread?.quitSafely() else thread?.quit()
         thread = null
     }
 

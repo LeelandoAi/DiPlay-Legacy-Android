@@ -349,7 +349,7 @@ class WifiP2pGroupManager(
             if (activeChannel != null) releaseLegacyChannelRestriction(activeChannel)
             activeChannel?.close()
         }
-        activeThread?.quitSafely()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR2) activeThread?.quitSafely() else activeThread?.quit()
     }
 
     private fun createChannelListener(
@@ -871,7 +871,7 @@ class WifiP2pGroupManager(
             if (failedChannel != null) releaseLegacyChannelRestriction(failedChannel)
             failedChannel?.close()
         }
-        failedThread?.quitSafely()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR2) failedThread?.quitSafely() else failedThread?.quit()
     }
 
     private fun removeGroupBlocking(channel: WifiP2pManager.Channel, expectedName: String? = observedCreatedName ?: requestedName) {
