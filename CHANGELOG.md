@@ -1,9 +1,13 @@
-# DiPlay 0.2.63 (Pre-release) — 2026-10-15
+# DiPlay 0.2.63 — 2026-10-15
 
-- Add pure USB Host Bluetooth stack support for external dongles (UGREEN CM390 RTL8761B/RTL8761BUV, TP-Link UB500, CSR8510 A10, etc.).
-- Add intelligent peripheral filtering for multi-USB car stereos (e.g. Allwinner T3): accurately excludes dashcam (UVC video), USB flash drives, and hubs from Bluetooth detection.
-- Add multi-device candidate discovery and tolerant detachment handling so dashcam reboots/unplugs do not interrupt active Bluetooth sessions.
-- Merge latest mainline fixes for car hotspot auto-retry and floating dot navigation.
+- Pure Android USB Host Bluetooth stack: direct support for external USB dongles (UGREEN CM390 RTL8761B/RTL8761BUV, TP-Link UB500, ASUS USB-BT500, CSR8510 A10, etc.) without requiring system Bluetooth or root permissions.
+- Firmware auto-loading & fallback: automatic Realtek firmware uploading with graceful fallback to onboard ROM when firmware asset is absent.
+- Multi-USB car stereo peripheral co-existence: intelligent exclusion of dashcams (UVC video 0x0E), mass storage (0x08), and hubs (0x09) from Bluetooth probing.
+- Detachment tolerance & candidate discovery: dashcam reboots or disconnections no longer disrupt ongoing Bluetooth sessions; prioritizes devices with granted USB permissions.
+- Pairing & link key persistence: Just Works and Numeric Comparison pairing with encrypted link key storage across reboots.
+- Mainline stability sync: automatic 60s retry for failed boot hotspot start, and floating dot navigation shortcut fix.
+
+See [v0.2.63 release notes](docs/RELEASE-NOTES-0.2.63.md) for validation and device-testing limits.
 
 # DiPlay 0.2.62 — 2026-10-15
 
