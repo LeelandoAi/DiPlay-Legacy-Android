@@ -1,3 +1,13 @@
+# DiPlay 0.2.65 — 2026-10-16
+
+- Fullscreen app view & dock auto-hide gesture: optional toggle under Display settings to hide the CarPlay dock for full-screen navigation, with edge-swipe gesture to reveal.
+- Instant wired reconnect on unplug & replug: eliminate 1-2 minute reconnect delay after physical USB cable replug.
+- TCP packet loss & link stability improvements: optimize userspace lwIP packet processing and IPv6 neighbor solicitations.
+- Desktop focus & touch responsiveness fix: eliminate unresponsiveness on head unit launcher desktop after lingering.
+- Floating dot presentation polish: show floating dot only when leaving CarPlay and automatically sync its icon with current app.
+
+See [v0.2.65 release notes](docs/RELEASE-NOTES-0.2.65.md) for validation and device-testing limits.
+
 # DiPlay 0.2.64 — 2026-10-15
 
 - Multi-USB port coexistence & peripheral isolation: automatically distinguish iPhone and USB Bluetooth dongles from dashcams (UVC) and storage drives (UDisk) on multi-USB head units (e.g. Allwinner T3).
