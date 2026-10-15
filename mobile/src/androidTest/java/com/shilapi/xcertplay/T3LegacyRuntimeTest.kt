@@ -21,8 +21,11 @@ import org.junit.Test
 import com.shilapi.xcertplay.network.LwipNcmNative
 import java.io.InputStream
 import java.io.OutputStream
+import java.net.DatagramPacket
+import java.net.DatagramSocket
 import java.net.HttpURLConnection
 import java.net.InetAddress
+import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
 import java.net.URL
@@ -493,6 +496,94 @@ class T3LegacyRuntimeTest {
         }
     }
 
+    @Test fun lwipUserspaceFullPipelineUdpRelay() {
+        val hostMac = byteArrayOf(0x02, 0x00, 0x00, 0x00, 0x00, 0x02)
+        val iphoneMac = byteArrayOf(0x02, 0x00, 0x00, 0x00, 0x00, 0x01)
+        val hostIp = InetAddress.getByName("fe80::2").address
+        val iphoneIp = InetAddress.getByName("fe80::1").address
+
+        val datagramSocket = DatagramSocket(InetSocketAddress(InetAddress.getByName("127.0.0.1"), 0))
+        val boundPort = datagramSocket.localPort
+        assertTrue("DatagramSocket must bind a valid ephemeral port", boundPort > 0)
+
+        val txQueue: BlockingQueue<ByteArray> = LinkedBlockingQueue()
+        val native = LwipNcmNative(onTxFrameCallback = { txQueue.offer(it) })
+        val created = native.create(hostMac, "fe80::2")
+        assertTrue("nativeCreate must succeed on KitKat", created)
+
+        try {
+            native.registerPort(boundPort, isTcp = false)
+            Thread.sleep(150)
+
+            val iphonePort = 50000
+
+            // 1. 发送 Neighbor Solicitation 让 lwIP 建立邻居表映射
+            val nsFrame = buildTestNeighborSolicitationFrame(
+                srcMac = iphoneMac,
+                dstMac = byteArrayOf(0x33.toByte(), 0x33.toByte(), 0x00, 0x00, 0x00, 0x02),
+                srcIp = iphoneIp,
+                targetIp = hostIp,
+            )
+            native.inputFrame(nsFrame)
+
+            // 2. iPhone 发送 UDP 报文到 fe80::2:boundPort (例如音频 RTP/RTCP 包)
+            val testPayload = "RTP-AUDIO-PACKET-DATA-TEST".toByteArray(Charsets.UTF_8)
+            val udpFrame = buildTestIpv6UdpFrame(
+                srcMac = iphoneMac,
+                dstMac = hostMac,
+                srcIp = iphoneIp,
+                dstIp = hostIp,
+                srcPort = iphonePort,
+                dstPort = boundPort,
+                payload = testPayload,
+            )
+            native.inputFrame(udpFrame)
+
+            // 3. 验证本地 127.0.0.1:boundPort 的 DatagramSocket 接收到转发的 UDP 报文
+            datagramSocket.soTimeout = 3000
+            val recvBuf = ByteArray(1024)
+            val recvPacket = DatagramPacket(recvBuf, recvBuf.size)
+            datagramSocket.receive(recvPacket)
+
+            val receivedBytes = recvPacket.data.copyOfRange(0, recvPacket.length)
+            assertArrayEquals("Received UDP payload must match forwarded data", testPayload, receivedBytes)
+
+            // 4. 反向测试：从本地服务向请求源 (127.0.0.1:loopback_fd_port) 回复 UDP 报文 (例如 RTCP 接收者报告)
+            val replyPayload = "RTCP-RECEIVER-REPORT-TEST".toByteArray(Charsets.UTF_8)
+            val replyPacket = DatagramPacket(replyPayload, replyPayload.size, recvPacket.socketAddress)
+            datagramSocket.send(replyPacket)
+
+            // 5. 验证 lwIP 将本地 UDP 回包封装并输出到 CDC-NCM 帧队列发往 iPhone
+            var downlinkUdpPayload: ByteArray? = null
+            val downlinkDeadline = System.currentTimeMillis() + 3000L
+            while (System.currentTimeMillis() < downlinkDeadline) {
+                val frame = txQueue.poll(500, TimeUnit.MILLISECONDS) ?: continue
+                if (isIcmp6NeighborSolicitation(frame)) {
+                    val naFrame = buildTestNeighborAdvertisementFrame(
+                        srcMac = iphoneMac,
+                        dstMac = hostMac,
+                        srcIp = iphoneIp,
+                        dstIp = hostIp,
+                        targetIp = iphoneIp,
+                    )
+                    native.inputFrame(naFrame)
+                    continue
+                }
+                val payload = extractUdpPayload(frame, iphonePort)
+                if (payload != null && payload.isNotEmpty()) {
+                    downlinkUdpPayload = payload
+                    break
+                }
+            }
+
+            assertNotNull("Must receive downlink UDP data frame from lwIP", downlinkUdpPayload)
+            assertArrayEquals("Downlink UDP payload must match server reply", replyPayload, downlinkUdpPayload)
+        } finally {
+            datagramSocket.close()
+            native.destroy()
+        }
+    }
+
     private fun isTcpSynAck(frame: ByteArray, dstPort: Int): Boolean {
         if (frame.size < 74) return false
         val etherType = ((frame[12].toInt() and 0xff) shl 8) or (frame[13].toInt() and 0xff)
@@ -746,6 +837,89 @@ class T3LegacyRuntimeTest {
         frame[13] = 0xdd.toByte()
         ipv6.copyInto(frame, 14)
         return frame
+    }
+
+    private fun buildTestIpv6UdpFrame(
+        srcMac: ByteArray,
+        dstMac: ByteArray,
+        srcIp: ByteArray,
+        dstIp: ByteArray,
+        srcPort: Int,
+        dstPort: Int,
+        payload: ByteArray,
+    ): ByteArray {
+        val udpHeaderLen = 8
+        val udpLen = udpHeaderLen + payload.size
+        val udp = ByteArray(udpLen)
+
+        udp[0] = (srcPort ushr 8).toByte()
+        udp[1] = srcPort.toByte()
+        udp[2] = (dstPort ushr 8).toByte()
+        udp[3] = dstPort.toByte()
+        udp[4] = (udpLen ushr 8).toByte()
+        udp[5] = udpLen.toByte()
+        udp[6] = 0 // Checksum placeholder
+        udp[7] = 0
+
+        if (payload.isNotEmpty()) {
+            payload.copyInto(udp, udpHeaderLen)
+        }
+
+        var sum = 0L
+        fun add16(b1: Int, b2: Int) {
+            sum += ((b1 and 0xff) shl 8) or (b2 and 0xff)
+        }
+
+        for (i in 0 until 16 step 2) add16(srcIp[i].toInt(), srcIp[i + 1].toInt())
+        for (i in 0 until 16 step 2) add16(dstIp[i].toInt(), dstIp[i + 1].toInt())
+        sum += (udpLen ushr 16)
+        sum += (udpLen and 0xffff)
+        sum += 17 // UDP protocol number
+
+        for (i in 0 until udpLen step 2) {
+            val b1 = udp[i].toInt()
+            val b2 = if (i + 1 < udpLen) udp[i + 1].toInt() else 0
+            add16(b1, b2)
+        }
+
+        while (sum ushr 16 != 0L) {
+            sum = (sum and 0xffff) + (sum ushr 16)
+        }
+        val checksum = (sum.inv().toInt()) and 0xffff
+        val finalChecksum = if (checksum == 0) 0xffff else checksum
+        udp[6] = (finalChecksum ushr 8).toByte()
+        udp[7] = finalChecksum.toByte()
+
+        val ipv6 = ByteArray(40 + udpLen)
+        ipv6[0] = 0x60.toByte()
+        ipv6[4] = (udpLen ushr 8).toByte()
+        ipv6[5] = udpLen.toByte()
+        ipv6[6] = 17 // Next header: UDP
+        ipv6[7] = 64 // Hop limit
+        srcIp.copyInto(ipv6, 8)
+        dstIp.copyInto(ipv6, 24)
+        udp.copyInto(ipv6, 40)
+
+        val frame = ByteArray(14 + ipv6.size)
+        dstMac.copyInto(frame, 0)
+        srcMac.copyInto(frame, 6)
+        frame[12] = 0x86.toByte()
+        frame[13] = 0xdd.toByte()
+        ipv6.copyInto(frame, 14)
+        return frame
+    }
+
+    private fun extractUdpPayload(frame: ByteArray, dstPort: Int): ByteArray? {
+        if (frame.size < 62) return null
+        val etherType = ((frame[12].toInt() and 0xff) shl 8) or (frame[13].toInt() and 0xff)
+        if (etherType != 0x86dd) return null
+        if ((frame[20].toInt() and 0xff) != 17) return null // UDP next header
+        val port = ((frame[56].toInt() and 0xff) shl 8) or (frame[57].toInt() and 0xff)
+        if (port != dstPort) return null
+        val udpLen = ((frame[58].toInt() and 0xff) shl 8) or (frame[59].toInt() and 0xff)
+        val payloadLen = udpLen - 8
+        if (payloadLen <= 0 || 62 + payloadLen > frame.size) return ByteArray(0)
+        return frame.copyOfRange(62, 62 + payloadLen)
     }
 
     private fun texts(view: View): List<TextView> = buildList {

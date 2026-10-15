@@ -27,6 +27,7 @@
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, TAG, __VA_ARGS__)
 
 #define MAX_RELAY_CONNS 32
+#define MAX_UDP_RELAYS 32
 #define BUFFER_SIZE 16384
 
 typedef struct {
@@ -36,6 +37,16 @@ typedef struct {
     uint8_t loopback_to_lwip_buf[BUFFER_SIZE];
     int loopback_to_lwip_len;
 } TcpRelayConn;
+
+typedef struct {
+    int active;
+    int port;
+    struct udp_pcb *lwip_pcb;
+    int loopback_fd;
+    ip_addr_t peer_ip;
+    u16_t peer_port;
+    int has_peer;
+} UdpRelay;
 
 typedef struct {
     int active;
@@ -61,6 +72,7 @@ typedef struct {
     int num_port_mappings;
 
     TcpRelayConn tcp_conns[MAX_RELAY_CONNS];
+    UdpRelay udp_relays[MAX_UDP_RELAYS];
 
     pthread_mutex_t lock;
     pthread_t thread;
@@ -139,6 +151,71 @@ static void close_tcp_relay_conn(LwipContext *ctx, TcpRelayConn *conn) {
         conn->lwip_pcb = NULL;
     }
     conn->loopback_to_lwip_len = 0;
+}
+
+static void close_udp_relay(LwipContext *ctx, UdpRelay *relay) {
+    (void)ctx;
+    if (!relay->active) return;
+    relay->active = 0;
+    if (relay->loopback_fd >= 0) {
+        close(relay->loopback_fd);
+        relay->loopback_fd = -1;
+    }
+    if (relay->lwip_pcb != NULL) {
+        udp_recv(relay->lwip_pcb, NULL, NULL);
+        udp_remove(relay->lwip_pcb);
+        relay->lwip_pcb = NULL;
+    }
+    relay->has_peer = 0;
+    relay->port = 0;
+}
+
+static void udp_relay_recv(void *arg, struct udp_pcb *upcb, struct pbuf *p,
+                           const ip_addr_t *addr, u16_t port) {
+    (void)upcb;
+    if (p == NULL) return;
+
+    UdpRelay *relay = (UdpRelay *)arg;
+    if (relay == NULL || !relay->active || relay->loopback_fd < 0) {
+        pbuf_free(p);
+        return;
+    }
+
+    if (addr != NULL) {
+        ip_addr_copy(relay->peer_ip, *addr);
+        relay->peer_port = port;
+        relay->has_peer = 1;
+    }
+
+    struct sockaddr_in sin;
+    memset(&sin, 0, sizeof(sin));
+    sin.sin_family = AF_INET;
+    sin.sin_port = htons((uint16_t)relay->port);
+    sin.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+
+    int tot_len = p->tot_len;
+    if (tot_len > 0) {
+        if (p->next == NULL) {
+            sendto(relay->loopback_fd, p->payload, (size_t)p->len, 0,
+                   (struct sockaddr *)&sin, sizeof(sin));
+        } else {
+            uint8_t stack_buf[2048];
+            uint8_t *buf = stack_buf;
+            if (tot_len > (int)sizeof(stack_buf)) {
+                buf = (uint8_t *)malloc((size_t)tot_len);
+            }
+            if (buf != NULL) {
+                pbuf_copy_partial(p, buf, (u16_t)tot_len, 0);
+                sendto(relay->loopback_fd, buf, (size_t)tot_len, 0,
+                       (struct sockaddr *)&sin, sizeof(sin));
+                if (buf != stack_buf) {
+                    free(buf);
+                }
+            }
+        }
+    }
+
+    pbuf_free(p);
 }
 
 static void tcp_relay_err(void *arg, err_t err) {
@@ -291,48 +368,144 @@ static void check_and_forward_loopback(LwipContext *ctx) {
     }
 }
 
-static void register_listeners_locked(LwipContext *ctx) {
-    for (int m = 0; m < ctx->num_port_mappings; m++) {
-        if (!ctx->port_mappings[m].active || !ctx->port_mappings[m].is_tcp) continue;
-        int port = ctx->port_mappings[m].port;
+static void check_and_forward_udp_loopback(LwipContext *ctx) {
+    for (int i = 0; i < MAX_UDP_RELAYS; i++) {
+        UdpRelay *relay = &ctx->udp_relays[i];
+        if (!relay->active || relay->loopback_fd < 0 || relay->lwip_pcb == NULL) continue;
+        if (!relay->has_peer) continue;
 
-        int already_listening = 0;
-        for (int i = 0; i < ctx->num_listen_pcbs; i++) {
-            if (ctx->listen_pcbs[i] != NULL && ctx->listen_pcbs[i]->local_port == port) {
-                already_listening = 1;
+        uint8_t buf[2048];
+        while (1) {
+            ssize_t n = recvfrom(relay->loopback_fd, buf, sizeof(buf), 0, NULL, NULL);
+            if (n > 0) {
+                struct pbuf *p = pbuf_alloc(PBUF_TRANSPORT, (u16_t)n, PBUF_RAM);
+                if (p != NULL) {
+                    pbuf_take(p, buf, (u16_t)n);
+                    err_t err = udp_sendto(relay->lwip_pcb, p, &relay->peer_ip, relay->peer_port);
+                    if (err != ERR_OK) {
+                        LOGW("udp_sendto port %d failed: %d", relay->port, err);
+                    }
+                    pbuf_free(p);
+                } else {
+                    LOGW("pbuf_alloc failed for udp forwarding on port %d, len=%zd", relay->port, n);
+                }
+            } else {
+                if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK) {
+                    LOGW("loopback_fd udp recvfrom error %d for port %d", errno, relay->port);
+                }
                 break;
             }
         }
-        if (already_listening) continue;
+    }
+}
 
-        struct tcp_pcb *pcb = tcp_new_ip6();
-        if (pcb == NULL) {
-            LOGE("tcp_new_ip6 failed for port %d", port);
-            continue;
-        }
+static void register_listeners_locked(LwipContext *ctx) {
+    for (int m = 0; m < ctx->num_port_mappings; m++) {
+        if (!ctx->port_mappings[m].active) continue;
+        int port = ctx->port_mappings[m].port;
+        int is_tcp = ctx->port_mappings[m].is_tcp;
 
-        tcp_bind_netif(pcb, &ctx->ncm_netif);
+        if (is_tcp) {
+            int already_listening = 0;
+            for (int i = 0; i < ctx->num_listen_pcbs; i++) {
+                if (ctx->listen_pcbs[i] != NULL && ctx->listen_pcbs[i]->local_port == port) {
+                    already_listening = 1;
+                    break;
+                }
+            }
+            if (already_listening) continue;
 
-        err_t err = tcp_bind(pcb, IP6_ADDR_ANY, (u16_t)port);
-        if (err != ERR_OK) {
-            LOGE("tcp_bind port %d failed: %d", port, err);
-            tcp_close(pcb);
-            continue;
-        }
+            struct tcp_pcb *pcb = tcp_new_ip6();
+            if (pcb == NULL) {
+                LOGE("tcp_new_ip6 failed for port %d", port);
+                continue;
+            }
 
-        struct tcp_pcb *listen_pcb = tcp_listen_with_backlog(pcb, 4);
-        if (listen_pcb == NULL) {
-            LOGE("tcp_listen_with_backlog port %d failed", port);
-            tcp_close(pcb);
-            continue;
-        }
+            tcp_bind_netif(pcb, &ctx->ncm_netif);
 
-        tcp_arg(listen_pcb, ctx);
-        tcp_accept(listen_pcb, tcp_relay_accept);
+            err_t err = tcp_bind(pcb, IP6_ADDR_ANY, (u16_t)port);
+            if (err != ERR_OK) {
+                LOGE("tcp_bind port %d failed: %d", port, err);
+                tcp_close(pcb);
+                continue;
+            }
 
-        if (ctx->num_listen_pcbs < MAX_PORT_MAPPINGS) {
-            ctx->listen_pcbs[ctx->num_listen_pcbs++] = listen_pcb;
-            LOGI("lwIP listening on [fe80::2]:%d (TCP)", port);
+            struct tcp_pcb *listen_pcb = tcp_listen_with_backlog(pcb, 4);
+            if (listen_pcb == NULL) {
+                LOGE("tcp_listen_with_backlog port %d failed", port);
+                tcp_close(pcb);
+                continue;
+            }
+
+            tcp_arg(listen_pcb, ctx);
+            tcp_accept(listen_pcb, tcp_relay_accept);
+
+            if (ctx->num_listen_pcbs < MAX_PORT_MAPPINGS) {
+                ctx->listen_pcbs[ctx->num_listen_pcbs++] = listen_pcb;
+                LOGI("lwIP listening on [fe80::2]:%d (TCP)", port);
+            }
+        } else {
+            int already_relayed = 0;
+            for (int i = 0; i < MAX_UDP_RELAYS; i++) {
+                if (ctx->udp_relays[i].active && ctx->udp_relays[i].port == port) {
+                    already_relayed = 1;
+                    break;
+                }
+            }
+            if (already_relayed) continue;
+
+            UdpRelay *relay = NULL;
+            for (int i = 0; i < MAX_UDP_RELAYS; i++) {
+                if (!ctx->udp_relays[i].active) {
+                    relay = &ctx->udp_relays[i];
+                    break;
+                }
+            }
+            if (relay == NULL) {
+                LOGE("No free UDP relay slots for port %d", port);
+                continue;
+            }
+
+            struct udp_pcb *pcb = udp_new_ip6();
+            if (pcb == NULL) {
+                LOGE("udp_new_ip6 failed for port %d", port);
+                continue;
+            }
+
+            udp_bind_netif(pcb, &ctx->ncm_netif);
+
+            err_t err = udp_bind(pcb, IP6_ADDR_ANY, (u16_t)port);
+            if (err != ERR_OK) {
+                LOGE("udp_bind port %d failed: %d", port, err);
+                udp_remove(pcb);
+                continue;
+            }
+
+            int fd = socket(AF_INET, SOCK_DGRAM, 0);
+            if (fd < 0) {
+                LOGE("Failed to create loopback UDP socket for port %d: %d", port, errno);
+                udp_remove(pcb);
+                continue;
+            }
+
+            int flags = fcntl(fd, F_GETFL, 0);
+            fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+
+            int rcvbuf = 256 * 1024;
+            int sndbuf = 256 * 1024;
+            setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &rcvbuf, sizeof(rcvbuf));
+            setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &sndbuf, sizeof(sndbuf));
+
+            relay->active = 1;
+            relay->port = port;
+            relay->lwip_pcb = pcb;
+            relay->loopback_fd = fd;
+            relay->has_peer = 0;
+            memset(&relay->peer_ip, 0, sizeof(relay->peer_ip));
+            relay->peer_port = 0;
+
+            udp_recv(pcb, udp_relay_recv, relay);
+            LOGI("lwIP listening on [fe80::2]:%d (UDP)", port);
         }
     }
 }
@@ -347,6 +520,7 @@ static void *lwip_worker_thread(void *arg) {
         sys_check_timeouts();
         register_listeners_locked(ctx);
         check_and_forward_loopback(ctx);
+        check_and_forward_udp_loopback(ctx);
 
         fd_set rfds;
         FD_ZERO(&rfds);
@@ -358,6 +532,15 @@ static void *lwip_worker_thread(void *arg) {
                 FD_SET(ctx->tcp_conns[i].loopback_fd, &rfds);
                 if (ctx->tcp_conns[i].loopback_fd > max_fd) {
                     max_fd = ctx->tcp_conns[i].loopback_fd;
+                }
+            }
+        }
+
+        for (int i = 0; i < MAX_UDP_RELAYS; i++) {
+            if (ctx->udp_relays[i].active && ctx->udp_relays[i].loopback_fd >= 0) {
+                FD_SET(ctx->udp_relays[i].loopback_fd, &rfds);
+                if (ctx->udp_relays[i].loopback_fd > max_fd) {
+                    max_fd = ctx->udp_relays[i].loopback_fd;
                 }
             }
         }
@@ -471,7 +654,8 @@ Java_com_shilapi_xcertplay_network_LwipNcmNative_nativeRegisterPort(
 
     pthread_mutex_lock(&ctx->lock);
     for (int i = 0; i < ctx->num_port_mappings; i++) {
-        if (ctx->port_mappings[i].port == port) {
+        if (ctx->port_mappings[i].port == port &&
+            ctx->port_mappings[i].is_tcp == (isTcp ? 1 : 0)) {
             pthread_mutex_unlock(&ctx->lock);
             return;
         }
@@ -504,6 +688,10 @@ Java_com_shilapi_xcertplay_network_LwipNcmNative_nativeDestroy(
 
     for (int i = 0; i < MAX_RELAY_CONNS; i++) {
         close_tcp_relay_conn(ctx, &ctx->tcp_conns[i]);
+    }
+
+    for (int i = 0; i < MAX_UDP_RELAYS; i++) {
+        close_udp_relay(ctx, &ctx->udp_relays[i]);
     }
 
     for (int i = 0; i < ctx->num_listen_pcbs; i++) {
