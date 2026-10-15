@@ -106,7 +106,12 @@ class Ipv6NcmBridge(
     override fun close() {
         if (!running.compareAndSet(true, false)) return
         ncm.close()
-        tun.close()
+        // Issue #168: do NOT close the TUN here. Its lifecycle belongs to
+        // CarPlayVpnService, which deliberately keeps it open across wired
+        // attempts (reuseTun skips establish() to avoid leaking the 4.4 netd
+        // UID fwmark rule). Closing it here makes every retry die with
+        // "Already closed" at the next attach(). The TUN is closed in
+        // CarPlayVpnService.onDestroy().
         join(ncmToTunThread)
         join(tunToNcmThread)
     }
