@@ -27,6 +27,8 @@ class UsbBluetoothRegressionTest {
         val intf = mock(UsbInterface::class.java)
         val incoming = LinkedBlockingQueue<ByteArray>()
         val commands = mutableListOf<Int>()
+        val commandParams = mutableListOf<ByteArray>()
+        var packetReply: ((Int, ByteArray) -> ByteArray?)? = null
         var transferResult: Int? = null
         var reply: (Int) -> ByteArray? = { opcode -> complete(opcode, when (opcode) {
             HciProtocol.OP_READ_BD_ADDR -> byteArrayOf(0, 0x66, 0x55, 0x44, 0x33, 0x22, 0x11)
@@ -60,7 +62,9 @@ class UsbBluetoothRegressionTest {
                     val packet = call.getArgument<ByteArray>(4)
                     val opcode = (packet[0].toInt() and 255) or ((packet[1].toInt() and 255) shl 8)
                     commands.add(opcode)
-                    reply(opcode)?.let { incoming.offer(it) }
+                    val params = packet.copyOfRange(3, packet.size)
+                    commandParams.add(params)
+                    (packetReply?.invoke(opcode, params) ?: reply(opcode))?.let { incoming.offer(it) }
                     transferResult ?: packet.size
                 }
             `when`(connection.bulkTransfer(any(UsbEndpoint::class.java), any(ByteArray::class.java), anyInt(), anyInt()))
@@ -154,6 +158,55 @@ class UsbBluetoothRegressionTest {
             release.countDown()
             enable.get(5, TimeUnit.SECONDS)
             adapter.shutdown()
+        }
+    }
+
+    @Test fun respondingCm390RomLoadsBundledFirmwareBeforeScanEnable() {
+        val f = UsbFixture()
+        `when`(f.device.vendorId).thenReturn(0x2b89)
+        `when`(f.device.productId).thenReturn(0x6275)
+        var activated = false
+        val normal = f.reply
+        f.packetReply = { opcode, params -> when (opcode) {
+            HciProtocol.OP_READ_LOCAL_VERSION -> UsbFixture.complete(opcode,
+                byteArrayOf(0, 10, 11, 0, 10, 0x5d, 0, if (activated) 0x22 else 0x61, 0x87.toByte()))
+            0xfc6d -> UsbFixture.complete(opcode, byteArrayOf(0, 1))
+            0xfc20 -> {
+                check(params.isNotEmpty())
+                if (params[0].toInt() and 0x80 != 0) activated = true
+                UsbFixture.complete(opcode, byteArrayOf(0, params[0]))
+            }
+            else -> normal(opcode)
+        } }
+        UsbBtHci.open(f.manager, f.device)!!.use { hci ->
+            val result = hci.initialize(firmwareLoader = UsbBtFirmwareLoader(hci, f.context.assets))
+            assertTrue(result.toString(), result is UsbBtHci.HciResult.Ok)
+            assertTrue(activated)
+            val fragments = f.commands.withIndex().filter { it.value == 0xfc20 }
+            assertTrue(fragments.isNotEmpty())
+            assertEquals(0, f.commandParams[fragments.first().index][0].toInt())
+            assertTrue(f.commandParams[fragments.last().index][0].toInt() and 0x80 != 0)
+            assertTrue(f.commands.indexOf(HciProtocol.OP_WRITE_SCAN_ENABLE) > fragments.last().index)
+            assertEquals(2, f.commands.count { it == HciProtocol.OP_RESET })
+        }
+    }
+
+    @Test fun cm390PatchRejectionStopsInitializationBeforeDiscoverability() {
+        val f = UsbFixture()
+        `when`(f.device.vendorId).thenReturn(0x0bda)
+        `when`(f.device.productId).thenReturn(0x8771)
+        val normal = f.reply
+        f.packetReply = { opcode, _ -> when (opcode) {
+            HciProtocol.OP_READ_LOCAL_VERSION -> UsbFixture.complete(opcode,
+                byteArrayOf(0, 10, 11, 0, 10, 0x5d, 0, 0x61, 0x87.toByte()))
+            0xfc6d -> UsbFixture.complete(opcode, byteArrayOf(0, 1))
+            0xfc20 -> UsbFixture.complete(opcode, byteArrayOf(0x0c))
+            else -> normal(opcode)
+        } }
+        UsbBtHci.open(f.manager, f.device)!!.use { hci ->
+            assertTrue(hci.initialize(firmwareLoader = UsbBtFirmwareLoader(hci, f.context.assets)) is UsbBtHci.HciResult.Failed)
+            assertFalse(f.commands.contains(HciProtocol.OP_WRITE_SCAN_ENABLE))
+            assertEquals(1, f.commands.count { it == 0xfc20 })
         }
     }
 }

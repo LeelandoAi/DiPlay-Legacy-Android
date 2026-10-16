@@ -8,14 +8,12 @@ import android.hardware.usb.UsbInterface
 import android.hardware.usb.UsbManager
 import android.util.Log
 import com.shilapi.xcertplay.usbbt.HciProtocol.MAX_EVENT_PACKET_SIZE
-import com.shilapi.xcertplay.usbbt.HciProtocol.OP_BCM_DOWNLOAD_MINIDRIVER
 import com.shilapi.xcertplay.usbbt.HciProtocol.OP_READ_BD_ADDR
 import com.shilapi.xcertplay.usbbt.HciProtocol.OP_READ_BUFFER_SIZE
 import com.shilapi.xcertplay.usbbt.HciProtocol.OP_READ_INQUIRY_RESPONSE_TX_POWER
 import com.shilapi.xcertplay.usbbt.HciProtocol.OP_READ_LOCAL_FEATURES
 import com.shilapi.xcertplay.usbbt.HciProtocol.OP_READ_LOCAL_VERSION
 import com.shilapi.xcertplay.usbbt.HciProtocol.OP_RESET
-import com.shilapi.xcertplay.usbbt.HciProtocol.OP_RTL_DOWNLOAD_COMMAND
 import com.shilapi.xcertplay.usbbt.HciProtocol.OP_SET_EVENT_MASK
 import com.shilapi.xcertplay.usbbt.HciProtocol.OP_WRITE_CLASS_OF_DEVICE
 import com.shilapi.xcertplay.usbbt.HciProtocol.OP_WRITE_DEFAULT_LINK_POLICY
@@ -255,35 +253,40 @@ class UsbBtHci private constructor(
 
         val reset = timed("HCI_Reset", UsbBtTiming.RESET_POLICY, OP_RESET)
         if (reset is HciResult.Failed) {
-            // Several Broadcom/Realtek dongles ship without firmware and ignore
-            // HCI_Reset until their vendor blob is uploaded.
             val fwResult = firmwareLoader?.loadForDevice(device.vendorId, device.productId)
             if (fwResult is UsbBtFirmwareLoader.LoadResult.Uploaded) {
                 step("firmware uploaded (${fwResult.detail}); re-running init")
-                // Chip was reset by the upload; retry the whole sequence once.
                 return initialize(localName, null)
             }
-            // No loader, no file, or upload failed: fall back to the old
-            // download-mode hint so diagnostics say exactly what is missing.
-            val recovery = tryVendorFirmwareRecovery()
             val hint = when (fwResult) {
+                is UsbBtFirmwareLoader.LoadResult.Failed -> fwResult.reason
+                is UsbBtFirmwareLoader.LoadResult.NoFirmware -> "missing firmware asset: ${fwResult.assetName}"
                 is UsbBtFirmwareLoader.LoadResult.NoFirmwareNeeded ->
                     "device is ROM-based (no upload required); check USB bus power or connection"
-                else -> if (recovery) {
-                    "dongle entered firmware-download mode but no vendor firmware blob is bundled; " +
-                        "obtain the .hcd (Broadcom) / .bin (Realtek) for VID 0x${device.vendorId.toString(16)} " +
-                        "and place it where the app can load it"
-                } else {
-                    "dongle may need vendor firmware (no response to HCI_Reset)"
-                }
+                is UsbBtFirmwareLoader.LoadResult.Skipped -> fwResult.detail
+                else -> "no response to HCI_Reset"
             }
-            step("firmware recovery attempted: $hint")
             return HciResult.Failed("HCI_Reset failed: ${reset.reason}; $hint")
         }
 
-        when (val version = timed("Read_Local_Version", UsbBtTiming.READ_POLICY, OP_READ_LOCAL_VERSION)) {
+        val version = timed("Read_Local_Version", UsbBtTiming.READ_POLICY, OP_READ_LOCAL_VERSION)
+        when (version) {
             is HciResult.Ok -> step("Local_Version ok (${version.value.size} return bytes)")
             is HciResult.Failed -> step("Local_Version failed (non-fatal): ${version.reason}")
+        }
+        when (val firmware = firmwareLoader?.loadForDevice(
+            device.vendorId, device.productId, (version as? HciResult.Ok)?.value,
+        )) {
+            is UsbBtFirmwareLoader.LoadResult.Uploaded -> {
+                step("firmware uploaded: ${firmware.detail}")
+                val patchedReset = timed("Post_Firmware_Reset", UsbBtTiming.RESET_POLICY, OP_RESET)
+                if (patchedReset is HciResult.Failed) return HciResult.Failed("post-firmware reset: ${patchedReset.reason}")
+            }
+            is UsbBtFirmwareLoader.LoadResult.Failed -> return HciResult.Failed("firmware setup failed: ${firmware.reason}")
+            is UsbBtFirmwareLoader.LoadResult.NoFirmware -> step("no optional firmware asset: ${firmware.assetName}")
+            is UsbBtFirmwareLoader.LoadResult.NoFirmwareNeeded -> step(firmware.detail)
+            is UsbBtFirmwareLoader.LoadResult.Skipped -> step(firmware.detail)
+            null -> Unit
         }
 
         when (val features = timed("Read_Local_Features", UsbBtTiming.READ_POLICY, OP_READ_LOCAL_FEATURES)) {
@@ -419,43 +422,6 @@ class UsbBtHci private constructor(
         }
 
         return HciResult.Ok(InitResult(bdAddr = bdAddr, bufferSize = bufferSize, steps = steps))
-    }
-
-    /**
-     * Attempt to put a firmware-less Broadcom/Realtek chip into download mode.
-     * Returns true when the chip acknowledged the vendor download command
-     * (meaning it is ready for a firmware blob we do not bundle).
-     *
-     * Vendor commands (public knowledge, same as every OS btusb driver sends):
-     * - Broadcom (0x0a5c): HCI_VSC_DOWNLOAD_MINIDRIVER (0xFC2E)
-     * - Realtek  (0x0bda): HCI_VSC_DOWNLOAD (0xFC20)
-     */
-    private fun tryVendorFirmwareRecovery(): Boolean {
-        val opcode = when (device.vendorId) {
-            0x0a5c -> OP_BCM_DOWNLOAD_MINIDRIVER
-            0x0bda -> OP_RTL_DOWNLOAD_COMMAND
-            else -> {
-                Log.i(
-                    TAG,
-                    "no vendor firmware sequence for VID 0x${device.vendorId.toString(16)}",
-                )
-                return false
-            }
-        }
-        return when (val r = sendCommand(opcode, timeoutMs = 3_000)) {
-            is HciResult.Ok -> {
-                Log.i(
-                    TAG,
-                    "vendor download command acknowledged (opcode 0x${opcode.toString(16)}); " +
-                        "chip awaits firmware blob",
-                )
-                true
-            }
-            is HciResult.Failed -> {
-                Log.i(TAG, "vendor download command failed: ${r.reason}")
-                false
-            }
-        }
     }
 
     override fun close() {
