@@ -364,7 +364,7 @@ internal object CarPlayMediaKeys {
      */
     @Synchronized
     fun handleWheelMediaKey(keyCode: Int): Boolean {
-        if (session == null || controller == null) return false
+        if ((session == null && legacyClient == null) || controller == null) return false
         val index = CarPlayMediaButton.forKeyCode(keyCode) ?: return false
         send(index, KeyEvent.keyCodeToString(keyCode))
         return true
