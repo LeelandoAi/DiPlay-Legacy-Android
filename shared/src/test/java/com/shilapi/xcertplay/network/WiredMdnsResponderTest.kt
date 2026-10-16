@@ -63,6 +63,25 @@ class WiredMdnsResponderTest {
         assertTrue(answer(query("_airplay._tcp.local", qu = false).dropLast(1).toByteArray()).isEmpty())
     }
 
+    @Test fun truncatedUdpTrailingBytesStillAnswersCompleteQuestion() {
+        // Query has a padding byte at the end; frame length is shortened by 1 byte so declared UDP len > frame len
+        val dnsWithPadding = query("_airplay._tcp.local", qu = true) + byteArrayOf(0)
+        val packet = ByteArray(48 + dnsWithPadding.size)
+        packet[0] = 0x60
+        packet[6] = 17
+        peerAddress.copyInto(packet, 8)
+        multicastAddress.copyInto(packet, 24)
+        putU16(packet, 4, packet.size - 40)
+        putU16(packet, 40, 5353)
+        putU16(packet, 42, 5353)
+        putU16(packet, 44, packet.size - 40) // Stated UDP length includes the padding byte
+        dnsWithPadding.copyInto(packet, 48)
+        val frame = EthernetIpv6Codec.build(peerMac, hostMac, packet)
+        // Pass frame truncated by 1 byte at the end
+        val answers = responder.answerFrames(frame, 14, packet.size - 1, hostMac, peerMac)
+        assertEquals(1, answers.size)
+    }
+
     private fun answer(dns: ByteArray): List<ByteArray> {
         val packet = ByteArray(48 + dns.size)
         packet[0] = 0x60
