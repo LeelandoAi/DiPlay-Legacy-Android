@@ -1,3 +1,10 @@
+# DiPlay 0.2.66 — 2026-10-16
+
+- Fix Android 4.2 SETUP loop failure & connection stall: DatagramSocket does not implement Closeable on API < 19; eliminate ClassCastException in socket binding to allow reliable handshake.
+- Diagnostic logging toggle: add option in Settings → Diagnostics to disable session logging, significantly reducing CPU & disk I/O overhead on older head units.
+
+See [v0.2.66 release notes](docs/RELEASE-NOTES-0.2.66.md) for validation and device-testing limits.
+
 # DiPlay 0.2.65 — 2026-10-16
 
 - Fullscreen app view & dock auto-hide gesture: optional toggle under Display settings to hide the CarPlay dock for full-screen navigation, with edge-swipe gesture to reveal.
