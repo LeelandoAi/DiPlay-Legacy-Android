@@ -209,6 +209,7 @@ class CarPlayMediaEngine(
         audioMeta.remove(streamKey)
         audioCaptures.remove(streamKey)?.close()
         if (pendingMicrophone.remove(streamKey) != null) sink.onMicrophoneStopped(streamId)
+        session.logDebug("Audio stream stopped type=$type audioType=$audioType")
         sink.onAudioStopped(streamId)
 
         val key = outputKey(session, stream) ?: return null
@@ -217,13 +218,12 @@ class CarPlayMediaEngine(
             type,
             audioType,
         )
-        Log.i(
-            TAG,
-            "airplay audio format type=$type audioType=$audioType codec=${format.codec} " +
-                "rate=${format.sampleRate} channels=${format.channels} " +
-                "formatBits=0x${java.lang.Long.toHexString((stream["audioFormat"] as? Number)?.toLong() ?: 0L)} " +
-                "micPort=${(stream["dataPort"] as? Number)?.toInt() ?: 0}",
-        )
+        val audioInfo = "airplay audio format type=$type audioType=$audioType codec=${format.codec} " +
+            "rate=${format.sampleRate} channels=${format.channels} " +
+            "formatBits=0x${java.lang.Long.toHexString((stream["audioFormat"] as? Number)?.toLong() ?: 0L)} " +
+            "micPort=${(stream["dataPort"] as? Number)?.toInt() ?: 0}"
+        Log.i(TAG, audioInfo)
+        session.logDebug(audioInfo)
         val connectionId = stream["streamConnectionID"]
         val latencyMs = (stream["audioLatencyMs"] as? Number)?.toInt() ?: 0
         val meta = AudioMeta(type, format, connectionId, latencyMs)
@@ -236,6 +236,7 @@ class CarPlayMediaEngine(
         val (dataPort, controlPort) = audio.listen(
             object : AudioStream.Listener {
                 override fun onStarted(firstSample: Int) {
+                    session.logDebug("Audio stream started type=$type audioType=$audioType firstSample=$firstSample")
                     meta.firstSample = firstSample
                     meta.originNs = System.nanoTime()
                     sink.onAudioStarted(streamId, format, firstSample)

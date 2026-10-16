@@ -1570,6 +1570,7 @@ private class AudioRenderer(
                     .build()
             } else {
                 val preferredStream = streamType()
+                routeLabel = "streamType=$preferredStream"
                 LegacyAudioFallback.build(
                     createLegacy = {
                         @Suppress("DEPRECATION")
@@ -1579,7 +1580,7 @@ private class AudioRenderer(
                     isInitialized = { it.state == AudioTrack.STATE_INITIALIZED },
                     release = { it.release() },
                     createFallback = {
-                        routeLabel = "usage(fallback=STREAM_MUSIC)"
+                        routeLabel = "streamType=$preferredStream(fallback=STREAM_MUSIC)"
                         Log.w(TAG, "streamType=$preferredStream rejected by this ROM; falling back to STREAM_MUSIC")
                         @Suppress("DEPRECATION")
                         AudioTrack(AudioManager.STREAM_MUSIC, format.sampleRate, channelMask, encoding,
@@ -2005,7 +2006,8 @@ private class AudioRenderer(
                 firstPcmWriteReported = true
                 report("Audio: first PCM write audioType=${format.audioType} bytes=$count api=${Build.VERSION.SDK_INT}")
                 if (Build.VERSION.SDK_INT <= 22) {
-                    report("Audio: legacy output state " + audioFocusCoordinator.legacyOutputSnapshot(channelOverride(mappedChannel ?: AudioChannel.MEDIA)))
+                    val streamSnapshot = channelOverride(mappedChannel ?: AudioChannel.MEDIA).takeIf { it != 0 } ?: streamType()
+                    report("Audio: legacy output state " + audioFocusCoordinator.legacyOutputSnapshot(streamSnapshot))
                 }
             }
             maxWriteMs = maxOf(maxWriteMs, (System.nanoTime() - writeStarted) / 1_000_000L)
