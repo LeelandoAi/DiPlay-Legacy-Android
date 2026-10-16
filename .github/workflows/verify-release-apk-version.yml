@@ -40,7 +40,7 @@ jobs:
           test "$(find release-apk -maxdepth 1 -type f -name '*.sha256' | wc -l)" -eq 1
           cd release-apk
           sha256sum --check *.sha256
-      - name: Verify APK version matches release tag
+      - name: Verify APK version and commit revision match release
         env:
           TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.event.release.tag_name }}
         shell: bash
@@ -56,3 +56,24 @@ jobs:
             echo "::error::APK metadata does not match release"
             exit 1
           fi
+
+          # Verify that APK was built from the release tag or its immediate parent
+          git fetch origin tag "$TAG" --no-tags
+          tag_commit=$(git rev-parse "$TAG^{commit}")
+          echo "Release tag commit: $tag_commit"
+
+          if unzip -p "$apk" META-INF/version-control-info.textproto > proto.txt 2>/dev/null; then
+            apk_commit=$(sed -n 's/.*revision: "\([a-f0-9]*\)".*/\1/p' proto.txt | head -1)
+            echo "APK built commit:   $apk_commit"
+            if [[ -n "$apk_commit" ]]; then
+              # Ensure there are no code diffs between tag commit and the commit APK was built from
+              diff_stat=$(git diff "$apk_commit" "$tag_commit" -- mobile/ shared/ common/ home/ || true)
+              if [[ -n "$diff_stat" ]]; then
+                echo "::error::Release APK was built from an outdated commit ($apk_commit) with code changes vs release tag ($tag_commit)!"
+                echo "$diff_stat"
+                exit 1
+              fi
+              echo "APK commit revision verified (matches release source tree with 0 diffs)."
+            fi
+          fi
+
