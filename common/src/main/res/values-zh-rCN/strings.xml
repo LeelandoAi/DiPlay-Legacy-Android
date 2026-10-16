@@ -742,4 +742,15 @@
     <string name="usb_bt_dongle_connected">USB 蓝牙 dongle 已连接（%1$s）</string>
     <string name="usb_bt_dongle_not_found">未发现 USB 蓝牙 dongle——请插入一个</string>
     <string name="usb_bt_dongle_permission_needed">点击授权 USB 蓝牙 dongle 的 USB 权限</string>
+    <string name="settings_usb_bluetooth_title">外置 USB 蓝牙</string>
+    <string name="settings_usb_bluetooth_subtitle">直接驱动外置 USB 蓝牙适配器（支持绿联 CM591/CM390、Realtek、炬芯 ATS2851 等），用于无线 CarPlay 数据通道。</string>
+    <string name="settings_usb_bluetooth_not_detected">未检测到外置 USB 蓝牙适配器 — 请插入兼容的 USB 蓝牙设备。</string>
+    <string name="settings_usb_bluetooth_detected">已识别: %1$s</string>
+    <string name="settings_usb_bluetooth_needs_permission">未获取 USB 访问权限 — 点击请求授权</string>
+    <string name="settings_usb_bluetooth_request_permission">授予 USB 权限</string>
+    <string name="settings_usb_bluetooth_start">启动外置蓝牙服务与广播配对</string>
+    <string name="settings_usb_bluetooth_stop">停止外置蓝牙服务</string>
+    <string name="settings_usb_bluetooth_running">运行中 · 本地 MAC: %1$s · 广播名称: %2$s</string>
+    <string name="settings_usb_bluetooth_self_test">自检外置蓝牙硬件与通讯</string>
+    <string name="settings_usb_bluetooth_testing">正在自检外置蓝牙…</string>
 </resources>

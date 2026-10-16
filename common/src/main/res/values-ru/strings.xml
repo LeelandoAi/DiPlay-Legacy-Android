@@ -666,4 +666,15 @@
     <string name="settings_car_bluetooth_mac_invalid">Пожалуйста, введите корректный 12-значный шестнадцатеричный MAC-адрес.</string>
     <string name="settings_harman_fullscreen_experimental">Полный экран Harman (экспериментально)</string>
     <string name="settings_harman_fullscreen_experimental_description">Позволяет CarPlay занять область штатной боковой панели на совместимых устройствах Harman. Применяется при следующем открытии окна CarPlay; на других прошивках возможны ошибки отображения.</string>
+    <string name="settings_usb_bluetooth_title">Внешний USB Bluetooth</string>
+    <string name="settings_usb_bluetooth_subtitle">Прямой стек для внешних USB Bluetooth адаптеров (UGREEN CM591/CM390, Realtek, Actions ATS2851) для беспроводного CarPlay.</string>
+    <string name="settings_usb_bluetooth_not_detected">Внешний USB Bluetooth адаптер не обнаружен — подключите совместимый адаптер.</string>
+    <string name="settings_usb_bluetooth_detected">Обнаружено: %1$s</string>
+    <string name="settings_usb_bluetooth_needs_permission">Требуется разрешение USB — нажмите для запроса</string>
+    <string name="settings_usb_bluetooth_request_permission">Предоставить доступ к USB</string>
+    <string name="settings_usb_bluetooth_start">Запустить службу и режим сопряжения</string>
+    <string name="settings_usb_bluetooth_stop">Остановить USB Bluetooth</string>
+    <string name="settings_usb_bluetooth_running">Работает · MAC: %1$s · Имя: %2$s</string>
+    <string name="settings_usb_bluetooth_self_test">Самодиагностика оборудования Bluetooth</string>
+    <string name="settings_usb_bluetooth_testing">Выполняется проверка…</string>
 </resources>

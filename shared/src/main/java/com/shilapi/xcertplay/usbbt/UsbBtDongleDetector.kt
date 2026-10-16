@@ -71,6 +71,7 @@ class UsbBtDongleDetector(private val appContext: Context) {
             0x413c to "Dell",
             0x03f0 to "HP",
             0x10d6 to "Actions Semiconductor",
+            0x10d7 to "UGREEN / Actions Semiconductor",
             0x0489 to "Foxconn",
         )
 
@@ -182,8 +183,12 @@ class UsbBtDongleDetector(private val appContext: Context) {
             0x8087 to 0x0029,
             0x8087 to 0x0032,
             0x8087 to 0x0aaa,
-            // Actions Semiconductor ATS2851
-            0x10d6 to 0x1101,
+            // Actions Semiconductor ATS2851 / UGREEN CM591
+            0x10d7 to 0xb012, // UGREEN CM591 (ATS2851 Bluetooth 5.3)
+            0x10d7 to 0xb011,
+            0x10d6 to 0x1101, // Actions generic ATS2851
+            0x10d6 to 0x2851,
+            0x2b89 to 0x3599, // UGREEN CM591 (35995)
         )
     }
 

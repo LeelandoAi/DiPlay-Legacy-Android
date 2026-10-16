@@ -548,6 +548,40 @@ class UsbBtBluetoothAdapter(
             append(" awaitingPermission=${awaitingPermission.get()}")
         }
     }
+
+    data class StatusInfo(
+        val isSupported: Boolean,
+        val isEnabled: Boolean,
+        val device: UsbDevice?,
+        val vendorLabel: String?,
+        val hasPermission: Boolean,
+        val localBdAddr: String?,
+        val aclCount: Int,
+        val peers: List<String>,
+        val awaitingPermission: Boolean,
+    )
+
+    fun getStatus(): StatusInfo {
+        val mgr = usbManager
+        val dongle = synchronized(lock) {
+            activeDevice?.let { dev -> detector.identify(dev) }
+        } ?: runCatching {
+            mgr?.let { detector.findDongles(it).firstOrNull() }
+        }.getOrNull()
+        val dev = dongle?.device
+        val hasPerm = if (mgr != null && dev != null) mgr.hasPermission(dev) else false
+        return StatusInfo(
+            isSupported = isSupported(),
+            isEnabled = isEnabled(),
+            device = dev,
+            vendorLabel = dongle?.vendorLabel,
+            hasPermission = hasPerm,
+            localBdAddr = localBdAddr,
+            aclCount = aclHandleByAddr.size,
+            peers = aclHandleByAddr.keys.toList(),
+            awaitingPermission = awaitingPermission.get(),
+        )
+    }
 }
 
 /**

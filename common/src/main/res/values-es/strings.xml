@@ -666,4 +666,15 @@
     <string name="settings_car_bluetooth_mac_invalid">Introduce una dirección MAC hexadecimal válida de 12 dígitos.</string>
     <string name="settings_harman_fullscreen_experimental">Pantalla completa Harman (experimental)</string>
     <string name="settings_harman_fullscreen_experimental_description">Permite que CarPlay ocupe el panel lateral original en unidades Harman compatibles. Se aplica al abrir de nuevo la ventana de CarPlay; otros firmwares podrían mostrarse incorrectamente.</string>
+    <string name="settings_usb_bluetooth_title">Bluetooth USB externo</string>
+    <string name="settings_usb_bluetooth_subtitle">Pila de hardware directa para adaptadores USB Bluetooth externos (ej. UGREEN CM591/CM390, Realtek, Actions ATS2851) para CarPlay inalámbrico.</string>
+    <string name="settings_usb_bluetooth_not_detected">No se detectó ningún adaptador Bluetooth USB externo — conecta uno compatible.</string>
+    <string name="settings_usb_bluetooth_detected">Detectado: %1$s</string>
+    <string name="settings_usb_bluetooth_needs_permission">Se requiere permiso USB — toca para solicitarlo</string>
+    <string name="settings_usb_bluetooth_request_permission">Conceder permiso USB</string>
+    <string name="settings_usb_bluetooth_start">Iniciar servicio y modo emparejamiento</string>
+    <string name="settings_usb_bluetooth_stop">Detener Bluetooth USB</string>
+    <string name="settings_usb_bluetooth_running">En ejecución · MAC: %1$s · Nombre: %2$s</string>
+    <string name="settings_usb_bluetooth_self_test">Autodiagnóstico del hardware Bluetooth</string>
+    <string name="settings_usb_bluetooth_testing">Ejecutando autodiagnóstico…</string>
 </resources>

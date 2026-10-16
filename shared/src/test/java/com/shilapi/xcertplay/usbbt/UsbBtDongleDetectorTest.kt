@@ -70,6 +70,20 @@ class UsbBtDongleDetectorTest {
         assertTrue(table.containsKey(0x0a5c)) // Broadcom
         assertTrue(table.containsKey(0x0a12)) // CSR / Qualcomm
         assertTrue(table.containsKey(0x8087)) // Intel
+        assertTrue(table.containsKey(0x10d7)) // UGREEN / Actions ATS2851
+    }
+
+    @Test
+    fun identifiesUgreenCm591Ats2851DongleViaPidWhitelist() {
+        val dev = createDevice(
+            vid = 0x10d7,
+            pid = 0xb012, // CM591 ATS2851 Bluetooth 5.3
+            devClass = 0xff, // Vendor-specific
+        )
+        val dongle = detector.identify(dev)
+        assertNotNull(dongle)
+        assertEquals(false, dongle!!.viaClassCode)
+        assertEquals("UGREEN / Actions Semiconductor (0x10d7:0xb012)", dongle.vendorLabel)
     }
 
     @Test
