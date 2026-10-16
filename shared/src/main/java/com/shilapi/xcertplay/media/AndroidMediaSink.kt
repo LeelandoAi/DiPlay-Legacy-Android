@@ -974,13 +974,22 @@ private class VideoDecoder(
         renderedFrameLogged = false
         submittedFrameLogged = false
         if (next != null) {
-            report("decoder=${next.name} mime=$mime size=${width}x$height")
+            val decoderName = safeDecoderName(next)
+            report("decoder=$decoderName mime=$mime size=${width}x$height")
             Log.i(
                 TAG,
-                "video decoder configured name=${next.name} mime=$mime size=${width}x$height",
+                "video decoder configured name=$decoderName mime=$mime size=${width}x$height",
             )
         }
     }
+
+    /** MediaCodec.getName() only exists on API 21+; on older devices it throws NoSuchMethodError. */
+    private fun safeDecoderName(codec: MediaCodec): String =
+        if (realSdkInt() >= Build.VERSION_CODES.LOLLIPOP) {
+            runCatching { codec.name }.getOrDefault("unknown")
+        } else {
+            "unknown"
+        }
 
     private data class DecoderAttempt(val codecName: String?, val tuned: Boolean)
 
