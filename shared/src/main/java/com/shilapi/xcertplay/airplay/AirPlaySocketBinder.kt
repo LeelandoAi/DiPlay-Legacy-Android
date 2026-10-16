@@ -98,10 +98,10 @@ internal object AirPlaySocketBinder {
             socket.bind(endpoint)
         }
 
-    fun serverAt(address: InetAddress, stage: String): ServerSocket = bindEphemeral(
+    fun serverAt(address: InetAddress, stage: String, reuseAddress: Boolean = false): ServerSocket = bindEphemeral(
         stage, address, { ServerSocket() },
         { socket, endpoint ->
-            socket.reuseAddress = false
+            socket.reuseAddress = reuseAddress
             socket.bind(endpoint)
         },
     )

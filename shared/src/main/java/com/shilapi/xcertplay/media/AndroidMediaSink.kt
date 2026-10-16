@@ -707,7 +707,7 @@ class AndroidMediaSink(
         }
     }
 
-    private companion object {
+    internal companion object {
         const val TELEPHONY_AUDIO_TYPE = "telephony"
     }
 }

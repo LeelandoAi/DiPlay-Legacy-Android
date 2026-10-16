@@ -451,6 +451,7 @@ class CarPlayVpnService : VpnService() {
                 generation,
                 AirPlayAttachment(scopedBind, config, identity, pairings, mfi, listener, media,
                     additionalBindAddresses, listenerIdentity),
+                listenerReuseAddress = true,
             )
             AttachResult.Started
         } catch (error: Exception) {
@@ -581,9 +582,16 @@ class CarPlayVpnService : VpnService() {
                 Log.w(TAG, "AirPlay port $busy is in use; listening on $bound instead")
             })
         } else {
-            AirPlayPortSelector.bindAll(listOf(replacement.address) + replacement.additionalAddresses,
-                replacement.config.port, reuseAddress = listenerReuseAddress) { busy, bound ->
-                Log.w(TAG, "AirPlay port $busy is in use; listening on $bound instead")
+            try {
+                AirPlayPortSelector.bindAll(listOf(replacement.address) + replacement.additionalAddresses,
+                    replacement.config.port, reuseAddress = listenerReuseAddress) { busy, bound ->
+                    Log.w(TAG, "AirPlay port $busy is in use; listening on $bound instead")
+                }
+            } catch (error: Exception) {
+                Log.w(TAG, "Dual-family AirPlay port bind failed (${error.message}); falling back to primary address ${replacement.address.hostAddress}")
+                listOf(AirPlayPortSelector.bind(replacement.address, replacement.config.port, reuseAddress = listenerReuseAddress) { busy, bound ->
+                    Log.w(TAG, "AirPlay port $busy is in use; listening on $bound instead")
+                })
             }
         }
         val server = servers.first()
