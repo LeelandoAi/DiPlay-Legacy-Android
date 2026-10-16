@@ -232,13 +232,23 @@ internal object CarPlayMediaKeys {
             val buttons = PendingIntent.getBroadcast(context, 0, intent, flags)
             legacyButtonComponent = component
             legacyButtons = buttons
-            // registerMediaButtonEventReceiver(PendingIntent) needs API 21+; the
-            // ComponentName variant exists since API 8 and works on API 17/18.
-            audio?.registerMediaButtonEventReceiver(component)
-            legacyClient = RemoteControlClient(buttons).also {
-                it.setTransportControlFlags(RemoteControlClient.FLAG_KEY_MEDIA_PLAY_PAUSE or
-                    RemoteControlClient.FLAG_KEY_MEDIA_NEXT or RemoteControlClient.FLAG_KEY_MEDIA_PREVIOUS)
-                audio?.registerRemoteControlClient(it)
+            try {
+                // registerMediaButtonEventReceiver(PendingIntent) needs API 21+; the
+                // ComponentName variant exists since API 8 and works on API 17/18.
+                @Suppress("DEPRECATION")
+                audio?.registerMediaButtonEventReceiver(component)
+            } catch (error: Throwable) {
+                Log.w(TAG, "registerMediaButtonEventReceiver failed", error)
+            }
+            try {
+                legacyClient = RemoteControlClient(buttons).also {
+                    it.setTransportControlFlags(RemoteControlClient.FLAG_KEY_MEDIA_PLAY_PAUSE or
+                        RemoteControlClient.FLAG_KEY_MEDIA_NEXT or RemoteControlClient.FLAG_KEY_MEDIA_PREVIOUS)
+                    audio?.registerRemoteControlClient(it)
+                }
+            } catch (error: Throwable) {
+                Log.w(TAG, "registerRemoteControlClient failed", error)
+            }
             }
         }
         Log.i(TAG, "media keys active focusGranted=$granted")
@@ -294,8 +304,19 @@ internal object CarPlayMediaKeys {
             @Suppress("DEPRECATION")
             appContext?.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
         }
-        legacyClient?.let { audio?.unregisterRemoteControlClient(it) }
-        legacyButtonComponent?.let { audio?.unregisterMediaButtonEventReceiver(it) }
+        try {
+            legacyClient?.let { audio?.unregisterRemoteControlClient(it) }
+        } catch (error: Throwable) {
+            Log.w(TAG, "unregisterRemoteControlClient failed", error)
+        }
+        try {
+            legacyButtonComponent?.let {
+                @Suppress("DEPRECATION")
+                audio?.unregisterMediaButtonEventReceiver(it)
+            }
+        } catch (error: Throwable) {
+            Log.w(TAG, "unregisterMediaButtonEventReceiver failed", error)
+        }
         legacyClient = null
         legacyButtons = null
         legacyButtonComponent = null
@@ -316,7 +337,11 @@ internal object CarPlayMediaKeys {
             mediaAudioActive
         }
         if (realSdkInt() < 21) {
-            legacyClient?.setPlaybackState(if (playing) RemoteControlClient.PLAYSTATE_PLAYING else RemoteControlClient.PLAYSTATE_PAUSED)
+            try {
+                legacyClient?.setPlaybackState(if (playing) RemoteControlClient.PLAYSTATE_PLAYING else RemoteControlClient.PLAYSTATE_PAUSED)
+            } catch (error: Throwable) {
+                Log.w(TAG, "legacy setPlaybackState failed", error)
+            }
             return
         }
         session?.setPlaybackState(
