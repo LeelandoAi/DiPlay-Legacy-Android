@@ -28,6 +28,8 @@
     "whats": "New in v0.2.68",
     "features": [
       "Dedicated lwIP transmit thread: move network frame delivery to an independent thread, eliminating native lock contention and boosting throughput (#187).",
+      "lwIP heap concurrency protection: mutex-guard input pbuf allocation to prevent heap corruption and SIGABRT crashes.",
+      "Android 4.2 video playback fix: guard MediaCodec.getName() behind API 21 check, resolving NoSuchMethodError on legacy runtimes.",
       "Wired session setup watchdog protection: precision matching on StartSession events to avoid spurious handshake timeouts (#187).",
       "Local VPN consent retry prompt: guide driver to re-grant permission when dismissed, preventing silent connection failure (#188).",
       "AirPlay TIME_WAIT & dual-stack socket binding: robust port reuse and dual-stack fallback for faster wireless reconnection.",
@@ -267,6 +269,8 @@
     "whats": "v0.2.68 更新亮点",
     "features": [
       "lwIP 数据发送改走独立线程：将 lwIP 数据输出转移至独立发送线程异步执行，消除 native 互斥锁阻塞，提升高码率吞吐与流畅度（#187）。",
+      "lwIP 内存堆并发安全保护：将输入帧 pbuf_alloc 移入互斥锁保护，彻底杜绝多线程竞争造成的内存堆损坏与 SIGABRT 闪退。",
+      "Android 4.2 视频播放闪退修复：对 MediaCodec.getName() 增加 API 21 版本安全防护，解决老旧车机解码画面时抛出 NoSuchMethodError。",
       "有线握手进度精确匹配：StartSession 进度事件精准匹配过滤，避免无关看门狗消息触发握手失败与无效重试（#187）。",
       "本地 VPN 授权被拒引导重试：本地 VPN 权限被拒时主动弹出授权重试对话框，避免死锁或退回桌面（#188）。",
       "AirPlay 端口 TIME_WAIT 与双栈绑定优化：引入端口套接字复用与 IPv4/IPv6 双栈智能绑定容错，显著提升无线二次连接成功率。",

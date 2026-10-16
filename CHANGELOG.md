@@ -1,9 +1,11 @@
 # DiPlay 0.2.68 — 2026-10-16
 
 - Dedicated thread for lwIP transmit: move lwIP network frame output to a dedicated sender thread, eliminating native lock contention and boosting throughput (#187).
+- lwIP heap concurrency protection: acquire mutex before allocating input pbuf to prevent memory corruption and SIGABRT crashes.
 - StartSession event precision matching: avoid watchdog-triggered handshake cancellations during wired setup (#187).
 - Local VPN permission retry dialog: prompt driver to re-grant VPN consent when dismissed, eliminating dead-end connection attempts (#188).
 - AirPlay TIME_WAIT & dual-stack socket binding: robust port reuse and dual-stack fallback for faster wireless reconnection.
+- Android 4.2 video playback fix: guard MediaCodec.getName() behind API 21 check, resolving NoSuchMethodError on legacy runtimes.
 - Legacy ROM Cipher.updateAAD fallback: dynamically detect updateAAD availability and smoothly fallback to BouncyCastle on API 17 / pseudo-4.4 units (#189).
 - Upstream feature ports: WheelSiriKey double-click detection (#813), car hotspot retry loop avoidance (#789), and phone call earphone-to-speaker forced routing (#797).
 - Automated release verification: ensure published APK strictly corresponds to current git tree with 0 diffs.
