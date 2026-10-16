@@ -213,9 +213,22 @@ class IphoneUsbHost(
                     // a STALL almost always means the iPhone refused it: non-MFi cable, or
                     // the "Trust This Computer" prompt was never accepted.
                     val hint = if (stalled == maxAttempts) {
-                        " The iPhone rejected the CarPlay configuration request outright" +
-                            " (USB STALL). Use an original Apple cable and accept" +
-                            " \"Trust This Computer\" on the iPhone when prompted."
+                        if (device.productId == CARPLAY_MODE_PID) {
+                            // Issue #201: the attached device already presents the iPhone
+                            // CarPlay-mode product ID (0x12a8) — typically a CarPlay box
+                            // emulating an iPhone — yet STALLs Apple's vendor handshake
+                            // and exposes no USBMUX interface, so DiPlay cannot talk to
+                            // it. The cable/trust hint would be wrong here; this needs
+                            // a real iPhone connected directly to the head unit.
+                            " The attached device already reports the iPhone CarPlay-mode USB" +
+                                " product ID but rejects Apple's CarPlay handshake (USB STALL);" +
+                                " it looks like an emulation box, not a real iPhone. Connect a" +
+                                " real iPhone directly to the head unit instead."
+                        } else {
+                            " The iPhone rejected the CarPlay configuration request outright" +
+                                " (USB STALL). Use an original Apple cable and accept" +
+                                " \"Trust This Computer\" on the iPhone when prompted."
+                        }
                     } else {
                         ""
                     }
@@ -458,6 +471,8 @@ class IphoneUsbHost(
         private const val CARPLAY_CONFIGURATION_REQUEST = 0x52
         private const val CARPLAY_CONFIGURATION_INDEX = 0x0004
         private const val VENDOR_RESPONSE_LENGTH = 1
+        /** iPhone USB product ID once it has switched into CarPlay mode (issue #201). */
+        private const val CARPLAY_MODE_PID = 0x12a8
         private const val CONTROL_TRANSFER_TIMEOUT_MILLIS = 1_000
         /**
          * Issue #112: the iPhone disconnects for ~1s while re-enumerating into the CarPlay
