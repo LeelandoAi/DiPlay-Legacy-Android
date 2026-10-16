@@ -249,7 +249,6 @@ internal object CarPlayMediaKeys {
             } catch (error: Throwable) {
                 Log.w(TAG, "registerRemoteControlClient failed", error)
             }
-            }
         }
         Log.i(TAG, "media keys active focusGranted=$granted")
     }
