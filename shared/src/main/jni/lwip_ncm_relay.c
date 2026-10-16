@@ -672,8 +672,15 @@ Java_com_shilapi_xcertplay_network_LwipNcmNative_nativeInputFrame(
     LwipContext *ctx = (LwipContext *)(intptr_t)handle;
     if (ctx == NULL || !ctx->running || frameArr == NULL || length <= 0) return;
 
+    // lwIP is built with NO_SYS=1 / SYS_LIGHTWEIGHT_PROT=0: its heap (mem.c)
+    // has no internal locking, so every heap access must hold ctx->lock.
+    // pbuf_alloc() -> mem_malloc() used to run outside the lock here while the
+    // worker thread concurrently freed pbufs (mem_free) under the lock, which
+    // corrupted the heap and later aborted the process in mem_free (SIGABRT).
+    pthread_mutex_lock(&ctx->lock);
     struct pbuf *p = pbuf_alloc(PBUF_RAW, (u16_t)length, PBUF_RAM);
     if (p == NULL) {
+        pthread_mutex_unlock(&ctx->lock);
         LOGW("pbuf_alloc failed for length %d", length);
         return;
     }
@@ -703,7 +710,6 @@ Java_com_shilapi_xcertplay_network_LwipNcmNative_nativeInputFrame(
         }
     }
 
-    pthread_mutex_lock(&ctx->lock);
     err_t err = ctx->ncm_netif.input(p, &ctx->ncm_netif);
     if (err != ERR_OK) {
         ctx->stats_rx_drops++;
