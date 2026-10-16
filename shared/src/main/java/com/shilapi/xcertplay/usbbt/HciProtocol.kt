@@ -24,13 +24,13 @@ object HciProtocol {
     const val USB_SUBCLASS_RF = 0x01
     const val USB_PROTOCOL_BLUETOOTH = 0x01
 
-    // HCI packet indicators as seen on interrupt/bulk endpoints.
+    // H4 indicators are not present on the separate USB interrupt/bulk endpoints.
     const val HCI_EVENT_PACKET = 0x04
     const val HCI_ACL_PACKET = 0x02
 
     // HCI event codes we care about during init.
     const val EVT_COMMAND_COMPLETE = 0x0E
-    const val EVT_COMMAND_STATUS = 0x0D
+    const val EVT_COMMAND_STATUS = 0x0F
 
     /** HCI opcode = (OGF << 10) | OCF. */
     fun opcode(ogf: Int, ocf: Int): Int = (ogf shl 10) or ocf
@@ -54,8 +54,8 @@ object HciProtocol {
     const val SCAN_DISABLED = 0x00
     const val SCAN_INQUIRY_AND_PAGE = 0x03
 
-    /** Max bytes of a single HCI event packet on the wire (indicator + header + 255 params). */
-    const val MAX_EVENT_PACKET_SIZE = 260
+    /** USB HCI event header (2 bytes) plus up to 255 parameter bytes. */
+    const val MAX_EVENT_PACKET_SIZE = 257
 
     /**
      * Encode an HCI command for the USB control transfer payload:
@@ -90,25 +90,21 @@ object HciProtocol {
         val returnParams: ByteArray,
     )
 
-    /** Parsed Command Status (0x0D) event. */
+    /** Parsed Command Status (0x0F) event. */
     data class CommandStatus(
         val status: Int,
         val numHciCommandPackets: Int,
         val opcode: Int,
     )
 
-    /**
-     * Parse one HCI event packet: 0x04 | event_code | param_len | params.
-     * Returns null when [length] bytes do not hold a well-formed event.
-     */
+    /** Parse a USB HCI event: event_code | param_len | params, without an H4 indicator. */
     fun parseEvent(packet: ByteArray, length: Int = packet.size): HciEvent? {
-        if (length < 3 || length > packet.size) return null
-        if (packet[0].toInt() and 0xFF != HCI_EVENT_PACKET) return null
-        val paramLen = packet[2].toInt() and 0xFF
-        if (3 + paramLen > length) return null
+        if (length < 2 || length > packet.size) return null
+        val paramLen = packet[1].toInt() and 0xFF
+        if (2 + paramLen != length) return null
         return HciEvent(
-            code = packet[1].toInt() and 0xFF,
-            params = packet.copyOfRange(3, 3 + paramLen),
+            code = packet[0].toInt() and 0xFF,
+            params = packet.copyOfRange(2, 2 + paramLen),
         )
     }
 
@@ -124,7 +120,7 @@ object HciProtocol {
         )
     }
 
-    /** Parse Command Status (0x0D) params. Null when malformed. */
+    /** Parse Command Status (0x0F) params. Null when malformed. */
     fun parseCommandStatus(event: HciEvent): CommandStatus? {
         if (event.code != EVT_COMMAND_STATUS || event.params.size < 4) return null
         val opcode = (event.params[2].toInt() and 0xFF) or
@@ -233,35 +229,29 @@ object HciProtocol {
     /** PB flag: first fragment of an L2CAP packet (start). */
     const val ACL_PB_FIRST_FLUSHABLE = 0x02
 
-    /**
-     * Parse one HCI ACL packet: 0x02 | handle+flags (2 LE) | data_len (2 LE) | data.
-     * Returns null when [length] bytes do not hold a well-formed packet.
-     */
+    /** Parse a USB HCI ACL packet: handle+flags (2 LE) | data_len (2 LE) | data. */
     fun parseAcl(packet: ByteArray, length: Int = packet.size): AclPacket? {
-        if (length < 5 || length > packet.size) return null
-        if (packet[0].toInt() and 0xFF != HCI_ACL_PACKET) return null
-        val handleFlags = (packet[1].toInt() and 0xFF) or ((packet[2].toInt() and 0xFF) shl 8)
-        val dataLen = (packet[3].toInt() and 0xFF) or ((packet[4].toInt() and 0xFF) shl 8)
-        if (5 + dataLen > length) return null
+        if (length < 4 || length > packet.size) return null
+        val handleFlags = (packet[0].toInt() and 0xFF) or ((packet[1].toInt() and 0xFF) shl 8)
+        val dataLen = (packet[2].toInt() and 0xFF) or ((packet[3].toInt() and 0xFF) shl 8)
+        if (4 + dataLen != length) return null
         return AclPacket(
             handle = handleFlags and 0x0FFF,
             flags = (handleFlags ushr 12) and 0x0F,
-            data = packet.copyOfRange(5, 5 + dataLen),
+            data = packet.copyOfRange(4, 4 + dataLen),
         )
     }
 
-    /**
-     * Encode an HCI ACL packet: 0x02 | handle+PB (2 LE) | data_len (2 LE) | data.
-     */
+    /** Encode a USB HCI ACL packet without the UART H4 indicator. */
     fun encodeAcl(handle: Int, data: ByteArray): ByteArray {
-        val out = ByteArray(5 + data.size)
-        out[0] = HCI_ACL_PACKET.toByte()
+        require(data.size <= 0xFFFF) { "HCI ACL payload too long: ${data.size}" }
+        val out = ByteArray(4 + data.size)
         val handleFlags = (handle and 0x0FFF) or (ACL_PB_FIRST_FLUSHABLE shl 12)
-        out[1] = (handleFlags and 0xFF).toByte()
-        out[2] = ((handleFlags ushr 8) and 0xFF).toByte()
-        out[3] = (data.size and 0xFF).toByte()
-        out[4] = ((data.size ushr 8) and 0xFF).toByte()
-        data.copyInto(out, 5)
+        out[0] = (handleFlags and 0xFF).toByte()
+        out[1] = ((handleFlags ushr 8) and 0xFF).toByte()
+        out[2] = (data.size and 0xFF).toByte()
+        out[3] = ((data.size ushr 8) and 0xFF).toByte()
+        data.copyInto(out, 4)
         return out
     }
 

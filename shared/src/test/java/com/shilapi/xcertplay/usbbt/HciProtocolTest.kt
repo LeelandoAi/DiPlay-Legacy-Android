@@ -28,8 +28,8 @@ class HciProtocolTest {
 
     @Test
     fun parseCommandCompleteEvent() {
-        // 0x04 | 0x0E | len=4 | numPkts=1 | opcode 0x0C03 LE | status=0
-        val packet = byteArrayOf(0x04, 0x0E, 0x04, 0x01, 0x03, 0x0C, 0x00)
+        // USB 0x0E | len=4 | numPkts=1 | opcode 0x0C03 LE | status=0
+        val packet = byteArrayOf(0x0E, 0x04, 0x01, 0x03, 0x0C, 0x00)
         val event = HciProtocol.parseEvent(packet, packet.size)!!
         assertEquals(0x0E, event.code)
         val complete = HciProtocol.parseCommandComplete(event)!!
@@ -40,8 +40,8 @@ class HciProtocolTest {
 
     @Test
     fun parseCommandStatusEvent() {
-        // 0x04 | 0x0D | len=4 | status=0 | numPkts=1 | opcode 0x1009 LE
-        val packet = byteArrayOf(0x04, 0x0D, 0x04, 0x00, 0x01, 0x09, 0x10)
+        // USB 0x0F | len=4 | status=0 | numPkts=1 | opcode 0x1009 LE
+        val packet = byteArrayOf(0x0F, 0x04, 0x00, 0x01, 0x09, 0x10)
         val event = HciProtocol.parseEvent(packet, packet.size)!!
         val status = HciProtocol.parseCommandStatus(event)!!
         assertEquals(0, status.status)
@@ -50,10 +50,10 @@ class HciProtocolTest {
 
     @Test
     fun parseMalformedEventsReturnNull() {
-        assertNull(HciProtocol.parseEvent(byteArrayOf(0x04, 0x0E), 2)) // truncated header
-        assertNull(HciProtocol.parseEvent(byteArrayOf(0x02, 0x0E, 0x00), 3)) // wrong indicator
+        assertNull(HciProtocol.parseEvent(byteArrayOf(0x0E), 1)) // truncated header
+        assertNull(HciProtocol.parseEvent(byteArrayOf(0x02, 0x0E, 0x00), 3)) // malformed length
         // Declared length longer than the bytes we actually read.
-        assertNull(HciProtocol.parseEvent(byteArrayOf(0x04, 0x0E, 0x04, 0x01), 4))
+        assertNull(HciProtocol.parseEvent(byteArrayOf(0x0E, 0x04, 0x01), 3))
         // Command Complete with fewer than 3 param bytes.
         val short = HciProtocol.HciEvent(0x0E, byteArrayOf(0x01, 0x03))
         assertNull(HciProtocol.parseCommandComplete(short))
@@ -98,8 +98,8 @@ class HciProtocolTest {
     fun aclEncodeParseRoundTrip() {
         val data = byteArrayOf(0x01, 0x02, 0x03, 0x04)
         val packet = HciProtocol.encodeAcl(handle = 0x0042, data = data)
-        // 0x02 | handle+flags LE | len LE | data
-        assertEquals(0x02, packet[0].toInt() and 0xFF)
+        // USB handle+flags LE | len LE | data
+        assertArrayEquals(byteArrayOf(0x42, 0x20, 0x04, 0x00, 0x01, 0x02, 0x03, 0x04), packet)
         val parsed = HciProtocol.parseAcl(packet)
         assertEquals(0x0042, parsed?.handle)
         assertArrayEquals(data, parsed?.data)
@@ -110,7 +110,7 @@ class HciProtocolTest {
         assertNull(HciProtocol.parseAcl(byteArrayOf(0x02, 0x01)))
         // Declared length exceeds buffer.
         assertNull(
-            HciProtocol.parseAcl(byteArrayOf(0x02, 0x42, 0x20, 0x10, 0x00, 0x01, 0x02)),
+            HciProtocol.parseAcl(byteArrayOf(0x42, 0x20, 0x10, 0x00, 0x01, 0x02)),
         )
     }
 
@@ -137,9 +137,9 @@ class HciProtocolTest {
 
     @Test
     fun connectionCompleteParse() {
-        // 0x04 | 0x03 | len=11 | status=0 | handle=0x0042 LE | BD_ADDR LSB-first | link_type | encrypt
+        // USB 0x03 | len=11 | status=0 | handle=0x0042 LE | BD_ADDR LSB-first | link_type | encrypt
         val packet = byteArrayOf(
-            0x04, 0x03, 0x0B, 0x00,
+            0x03, 0x0B, 0x00,
             0x42, 0x00,
             0xF6.toByte(), 0xE5.toByte(), 0xD4.toByte(), 0xC3.toByte(), 0xB2.toByte(), 0xA1.toByte(),
             0x01, 0x00,

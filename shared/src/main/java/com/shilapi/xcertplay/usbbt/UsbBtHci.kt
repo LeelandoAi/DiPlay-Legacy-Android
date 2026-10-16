@@ -7,8 +7,6 @@ import android.hardware.usb.UsbEndpoint
 import android.hardware.usb.UsbInterface
 import android.hardware.usb.UsbManager
 import android.util.Log
-import com.shilapi.xcertplay.usbbt.HciProtocol.EVT_COMMAND_COMPLETE
-import com.shilapi.xcertplay.usbbt.HciProtocol.EVT_COMMAND_STATUS
 import com.shilapi.xcertplay.usbbt.HciProtocol.MAX_EVENT_PACKET_SIZE
 import com.shilapi.xcertplay.usbbt.HciProtocol.OP_BCM_DOWNLOAD_MINIDRIVER
 import com.shilapi.xcertplay.usbbt.HciProtocol.OP_READ_BD_ADDR
@@ -34,7 +32,6 @@ import com.shilapi.xcertplay.usbbt.HciProtocol.USB_BT_REQ_TYPE_CLASS_INTERFACE_O
 import com.shilapi.xcertplay.usbbt.HciProtocol.USB_CLASS_WIRELESS_CONTROLLER
 import com.shilapi.xcertplay.usbbt.HciProtocol.USB_PROTOCOL_BLUETOOTH
 import com.shilapi.xcertplay.usbbt.HciProtocol.USB_SUBCLASS_RF
-import com.shilapi.xcertplay.usbbt.HciProtocol.encodeCommand
 import com.shilapi.xcertplay.usbbt.HciProtocol.encodeLocalName
 import com.shilapi.xcertplay.usbbt.HciProtocol.encodeSetEventMask
 import com.shilapi.xcertplay.usbbt.HciProtocol.encodeWriteClassOfDevice
@@ -44,8 +41,6 @@ import com.shilapi.xcertplay.usbbt.HciProtocol.encodeWriteInquiryMode
 import com.shilapi.xcertplay.usbbt.HciProtocol.encodeWriteScanType
 import com.shilapi.xcertplay.usbbt.HciProtocol.parseBdAddr
 import com.shilapi.xcertplay.usbbt.HciProtocol.parseBufferSize
-import com.shilapi.xcertplay.usbbt.HciProtocol.parseCommandComplete
-import com.shilapi.xcertplay.usbbt.HciProtocol.parseCommandStatus
 import com.shilapi.xcertplay.usbbt.HciProtocol.parseEvent
 
 /**
@@ -89,7 +84,6 @@ class UsbBtHci private constructor(
     companion object {
         private const val TAG = "UsbBtHci"
         private const val DEFAULT_COMMAND_TIMEOUT_MS = 2_000
-        private const val EVENT_READ_SLICE_MS = 500
 
         /**
          * Open [device] for HCI: finds the Bluetooth interface, claims it and
@@ -189,77 +183,29 @@ class UsbBtHci private constructor(
         }
     }
 
-    /**
-     * Send an HCI command and wait for its Command Complete (or a failing
-     * Command Status). Returns the command's return parameters on success.
-     */
+    private val dispatcher = HciEventDispatcher(
+        readEvent = { timeoutMs ->
+            val bytes = ByteArray(MAX_EVENT_PACKET_SIZE)
+            val read = connection.bulkTransfer(eventEndpoint, bytes, bytes.size, timeoutMs)
+            if (read > 0) parseEvent(bytes, read) else null
+        },
+        writeCommand = { payload, timeoutMs ->
+            connection.controlTransfer(
+                USB_BT_REQ_TYPE_CLASS_INTERFACE_OUT, USB_BT_CONTROL_REQUEST,
+                0, btInterface.id, payload, payload.size, timeoutMs,
+            )
+        },
+    )
+
+    /** Wait for Command Complete, or Command Status for asynchronous link commands. */
     fun sendCommand(
         opcode: Int,
         params: ByteArray = byteArrayOf(),
         timeoutMs: Int = DEFAULT_COMMAND_TIMEOUT_MS,
-    ): HciResult<ByteArray> {
-        val payload = runCatching { encodeCommand(opcode, params) }.getOrElse {
-            return HciResult.Failed("encode failed: ${it.message}")
-        }
-        val sent = connection.controlTransfer(
-            USB_BT_REQ_TYPE_CLASS_INTERFACE_OUT,
-            USB_BT_CONTROL_REQUEST,
-            0,
-            btInterface.id,
-            payload,
-            payload.size,
-            timeoutMs,
-        )
-        if (sent != payload.size) {
-            return HciResult.Failed(
-                "control transfer sent $sent/${payload.size} bytes for opcode 0x${opcode.toString(16)}",
-            )
-        }
-        val deadline = System.currentTimeMillis() + timeoutMs
-        val buf = ByteArray(MAX_EVENT_PACKET_SIZE)
-        while (true) {
-            val remaining = deadline - System.currentTimeMillis()
-            if (remaining <= 0) {
-                return HciResult.Failed(
-                    "timeout waiting for Command Complete (opcode 0x${opcode.toString(16)})",
-                )
-            }
-            val read = connection.bulkTransfer(
-                eventEndpoint,
-                buf,
-                buf.size,
-                remaining.coerceAtMost(EVENT_READ_SLICE_MS.toLong()).toInt(),
-            )
-            if (read < 0) continue // timeout slice elapsed; re-check the deadline
-            val event = parseEvent(buf, read) ?: continue
-            when (event.code) {
-                EVT_COMMAND_COMPLETE -> {
-                    val complete = parseCommandComplete(event) ?: continue
-                    if (complete.opcode != opcode) continue // not ours; keep waiting
-                    val status = complete.returnParams.firstOrNull()?.toInt()?.and(0xFF) ?: 0xFF
-                    if (status != 0) {
-                        return HciResult.Failed(
-                            "Command Complete status=0x${status.toString(16)} " +
-                                "for opcode 0x${opcode.toString(16)}",
-                        )
-                    }
-                    return HciResult.Ok(complete.returnParams)
-                }
-                EVT_COMMAND_STATUS -> {
-                    val status = parseCommandStatus(event) ?: continue
-                    if (status.opcode != opcode) continue
-                    if (status.status != 0) {
-                        return HciResult.Failed(
-                            "Command Status=0x${status.status.toString(16)} " +
-                                "for opcode 0x${opcode.toString(16)}",
-                        )
-                    }
-                    // Command accepted; its Command Complete will follow below.
-                }
-                else -> { /* unrelated async event; ignore while waiting */ }
-            }
-        }
-    }
+    ): HciResult<ByteArray> = dispatcher.sendCommand(opcode, params, timeoutMs).fold(
+        onSuccess = { HciResult.Ok(it) },
+        onFailure = { HciResult.Failed(it.message ?: it.javaClass.simpleName) },
+    )
 
     /**
      * Minimal bring-up so the dongle becomes usable and discoverable:
@@ -513,6 +459,7 @@ class UsbBtHci private constructor(
     }
 
     override fun close() {
+        dispatcher.close()
         runCatching { connection.releaseInterface(btInterface) }
         runCatching { connection.close() }
         Log.i(TAG, "HCI closed")
@@ -555,10 +502,5 @@ class UsbBtHci private constructor(
      * Used by the connection/pairing machinery for async events
      * (Connection Complete, IO Capability Request, ...).
      */
-    fun pollEvent(timeoutMs: Int = 500): HciProtocol.HciEvent? {
-        val buf = ByteArray(MAX_EVENT_PACKET_SIZE)
-        val read = connection.bulkTransfer(eventEndpoint, buf, buf.size, timeoutMs)
-        if (read <= 0) return null
-        return HciProtocol.parseEvent(buf, read)
-    }
+    fun pollEvent(timeoutMs: Int = 500): HciProtocol.HciEvent? = dispatcher.pollEvent(timeoutMs)
 }
