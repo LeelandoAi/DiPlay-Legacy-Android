@@ -2539,7 +2539,10 @@ class CarPlayController(
                 onIncoming = ::onRouteFrame,
                 onProgress = { message ->
                     debugLog("wired $message")
-                    if (message.contains("carplay-start-session")) {
+                    // Issue #187: match the exact send event only. The watchdog's own
+                    // timeout message ("... after carplay-start-session") must not re-arm
+                    // the chain, re-send the NA, or clear wiredTcpArrived.
+                    if (message == "iap2 tx=0x4301 carplay-start-session") {
                         wiredChain(14, "iAP2 StartSession (0x4301) sent; waiting for iPhone mDNS/TCP")
                         vpnService?.sendUnsolicitedNeighborAdvertisement(force = true)
                         // Issue #95: arm the first-TCP watchdog 鈥?a new StartSession means any
