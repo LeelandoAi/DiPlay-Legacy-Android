@@ -73,6 +73,10 @@ def verify_apk(apk_path: Path, target_commit_ref: str = "HEAD"):
 
     # 2. Check APK sha256 checksum file if exists
     sha_file = apk_path.with_name(apk_path.name + ".sha256")
+    if not sha_file.is_file():
+        alt_sha = ROOT / "checksums" / (apk_path.name + ".sha256")
+        if alt_sha.is_file():
+            sha_file = alt_sha
     if sha_file.is_file():
         import hashlib
         h = hashlib.sha256(apk_path.read_bytes()).hexdigest().lower()

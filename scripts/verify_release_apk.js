@@ -52,7 +52,13 @@ if (apkCommit === targetCommit) {
 }
 
 // 2. Check SHA256 checksum
-const shaFile = `${apkPath}.sha256`;
+let shaFile = `${apkPath}.sha256`;
+if (!fs.existsSync(shaFile)) {
+  const checksumsFile = path.join(root, 'checksums', `${path.basename(apkPath)}.sha256`);
+  if (fs.existsSync(checksumsFile)) {
+    shaFile = checksumsFile;
+  }
+}
 if (fs.existsSync(shaFile)) {
   const crypto = require('crypto');
   const actualHash = crypto.createHash('sha256').update(fs.readFileSync(apkPath)).digest('hex').toLowerCase();
