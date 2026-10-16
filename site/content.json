@@ -25,13 +25,13 @@
     ],
     "adb": "Installation & connection help",
     "bssid": "ADB is not required for everyday use. APK installation options depend on the car. No manual MAC address entry.",
-    "whats": "New in v0.2.69",
+    "whats": "New in v0.2.70",
     "features": [
-      "Fix Android 4.2 / API 17 music playback crash: adapt registerMediaButtonEventReceiver to ComponentName on API < 18, eliminating NoSuchMethodError during audio playback (#197).",
-      "Defensive legacy audio exception handling: safeguard media-key registration, RemoteControlClient setup, and playback state updates against custom vendor ROM failures.",
-      "Bundle Realtek USB Bluetooth firmware: package official firmware for 16 Realtek controller families for plug-and-play external dongles on legacy head units.",
-      "Dedicated lwIP transmit thread: move network frame delivery to an independent thread, eliminating native lock contention and boosting throughput (#187).",
-      "Android 4.2 video playback fix: guard MediaCodec.getName() behind API 21 check, resolving NoSuchMethodError on legacy runtimes."
+      "Fast cold start: add fast-path asset matching in bootstrap, skipping redundant extraction and multiple BouncyCastle crypto parses on UI thread (cold start reduced from 10-15s to <0.5s).",
+      "External USB Bluetooth adapter pairing & hotplug: support EVT_LINK_KEY_REQUEST and EVT_PIN_CODE_REQUEST negative replies for smooth SSP pairing fallback; preserve USB receivers during dongle disconnect; broadcast DiPlay name on adapter init.",
+      "Fix wired freeze & watchdog reboot: eliminate unbounded spin loop in IphoneUsbHost.readSynchronously with strict deadline & open checks; resolve LwipNcmBridge.close interface release race with RX thread.",
+      "Tolerant mDNS query parsing: resolve iPhone stuck in 'Connecting to CarPlay' by parsing actual arrived UDP payload length, tolerating NCM tail truncation (#199, #204).",
+      "Direct hotspot settings navigation on legacy ROMs: resolve com.android.settings.TetherSettings and WifiApSettings so Android 4.2 / 4.4 head units jump directly to portable hotspot settings instead of Wi-Fi list (#200)."
     ],
     "compat": "Before you try it",
     "compatText": "Refactored and maintained for legacy head units. Install over an existing version only when the package and signing certificate match. Upstream or Debug-signed versions may require reinstalling; save your settings and reports first.",
@@ -264,13 +264,13 @@
     ],
     "adb": "安装与连接指南",
     "bssid": "日常使用不需要 ADB。APK 安装方式取决于车机。无需手动输入 MAC 地址。",
-    "whats": "v0.2.69 更新亮点",
+    "whats": "v0.2.70 更新亮点",
     "features": [
-      "彻底修复 Android 4.2 / API 17 点击播放音乐时闪退：自适应切换 API < 18 的 ComponentName 媒体按键注册机制，解决 registerMediaButtonEventReceiver 抛出 NoSuchMethodError 崩溃（#197）。",
-      "老旧车机音频按键与会话全方位容错保护：对媒体按键注册、RemoteControlClient 注入及播放状态更新增加全面异常防御，杜绝定制 ROM 崩溃。",
-      "内置 16 款 Realtek 蓝牙控制器全系固件：覆盖 RTL8723/8761/8821/8822/8851/8852/8922 全系芯片，老旧车机即插即用外置 USB 蓝牙适配器。",
-      "lwIP 数据发送改走独立线程：将 lwIP 数据输出转移至独立发送线程异步执行，消除 native 互斥锁阻塞，提升高码率吞吐与流畅度（#187）。",
-      "Android 4.2 视频播放闪退修复：对 MediaCodec.getName() 增加 API 21 版本安全防护，解决老旧车机解码画面时抛出 NoSuchMethodError。"
+      "冷启动时间大幅削减（10~15秒降至 <0.5秒）：离线凭据校验增加快速路径，跳过重复解包及 3 次主线程 BouncyCastle 验签，消除冷启动卡顿。",
+      "外置 USB 蓝牙适配器与配对完善：支持 Link Key 与 PIN 码负响应，手机配对平滑回退至 SSP；优化热插拔广播监听，适配器上电立显 DiPlay 名称。",
+      "彻底解决有线连接卡死与整机看门狗重启：修复 IphoneUsbHost 同步读取死循环 100% CPU 占用；修复 LwipNcmBridge USB 接口释放时序避免内核死锁。",
+      "兼容尾部截断的 mDNS 查询包：采用实际到达的有效 UDP 负载长度解析，消除因 NCM 填充截断导致的查询丢弃，解决有线卡在“正在连接 CarPlay”（#199, #204）。",
+      "老旧 ROM 热点设置一键直达：补充旧版 AOSP 的 TetherSettings 与 WifiApSettings 候选，解决 Android 4.2/4.4 车机点击“打开热点”误跳 Wi-Fi 列表（#200）。"
     ],
     "compat": "试用前请了解",
     "compatText": "本项目基于开源项目 xcertplay / DiPlay 深度重构与兼容，内置离线认证材料。同包名、同签名版本可覆盖升级；签名不同的上游或 Debug 版本可能需要重新安装，请先保存设置与诊断报告。老旧车机建议先使用 30 fps 并关闭 HEVC。",

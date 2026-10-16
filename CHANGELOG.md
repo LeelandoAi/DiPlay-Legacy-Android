@@ -1,3 +1,14 @@
+# DiPlay 0.2.70 — 2026-10-17
+
+- Fast cold start: add fast-path asset matching in bootstrap, skipping redundant extraction and multiple BouncyCastle cryptographic validations on UI thread (cold start reduced from 10-15s to <0.5s).
+- External USB Bluetooth adapter pairing & hotplug: support `EVT_LINK_KEY_REQUEST` & `EVT_PIN_CODE_REQUEST` negative replies for smooth SSP pairing fallback; preserve USB receivers during dongle disconnect; broadcast "DiPlay" name on adapter init.
+- Fix wired freeze & watchdog reboot: eliminate unbounded spin loop in `IphoneUsbHost.readSynchronously` with strict deadline & open checks; resolve `LwipNcmBridge.close` interface release race with RX thread.
+- Tolerant mDNS query parsing: resolve iPhone stuck in "Connecting to CarPlay" by parsing actual arrived UDP payload length, tolerating NCM tail truncation (#199, #204).
+- Direct hotspot settings navigation on legacy ROMs: resolve `com.android.settings.TetherSettings` & `WifiApSettings` so Android 4.2 / 4.4 head units jump directly to portable hotspot settings instead of Wi-Fi list (#200).
+- Smooth wireless/wired mode toggle: reset previous controller session on onResume when transport mode changes to prevent port 7000 & mDNS state conflict.
+
+See [v0.2.70 release notes](docs/RELEASE-NOTES-0.2.70.md) for validation and device-testing limits.
+
 # DiPlay 0.2.69 — 2026-10-16
 
 - Fix Android 4.2 / API 17 music playback crash: adapt `registerMediaButtonEventReceiver` and `unregisterMediaButtonEventReceiver` to use `ComponentName` on API < 18, eliminating `NoSuchMethodError` when launching music or Now Playing (#197).
