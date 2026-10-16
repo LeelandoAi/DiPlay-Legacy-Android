@@ -3304,7 +3304,7 @@ class CarPlayController(
         CarPlayStatus.StartingHotspot ->
             "STEP wifi/ap: starting the wireless CarPlay access point"
         is CarPlayStatus.HotspotReady ->
-            "STEP wifi/ap-ready: backend=$backend ssid=$ssid band=$band " +
+            "STEP wifi/ap-ready: backend=$backend ap-network=[configured] band=$band " +
                 "channel=$channel bssid=$bssid address=$address"
         CarPlayStatus.WaitingForPairedIphone ->
             "STEP bt/select: waiting for a paired or connected iPhone"

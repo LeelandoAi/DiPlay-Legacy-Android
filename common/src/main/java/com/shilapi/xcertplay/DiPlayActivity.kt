@@ -4517,7 +4517,8 @@ class DiPlayActivity : ComponentActivity() {
         appendLine("--- Recent own-app process exits (Android 11+) ---")
         appendLine(ProcessExitDiagnostics.report(appContext))
         appendLine()
-        for (name in SessionLogFile.REPORT_NAMES) {
+        val logFiles = listOf("bluetooth-diagnostic.log") + SessionLogFile.REPORT_NAMES
+        for (name in logFiles) {
             val file = File(appContext.filesDir, "logs/$name")
             if (file.isFile) {
                 appendLine("--- $name ---")

@@ -71,10 +71,10 @@ class UsbBtBluetoothAdapter(
     /** Guard for lifecycle transitions. */
     private val lock = Any()
 
-    private var hci: UsbBtHci? = null
+    @Volatile private var hci: UsbBtHci? = null
     private var pairingAgent: UsbBtPairingAgent? = null
     @Volatile private var activeDevice: UsbDevice? = null
-    private var localBdAddr: String? = null
+    @Volatile private var localBdAddr: String? = null
     private var dongleLabel: String? = null
 
     /** BD_ADDR -> pending ACL connection latch. */
@@ -116,9 +116,7 @@ class UsbBtBluetoothAdapter(
         return runCatching { detector.findDongles(mgr).isNotEmpty() }.getOrDefault(false)
     }
 
-    override fun isEnabled(): Boolean = synchronized(lock) {
-        hci != null && pumpRunning.get()
-    }
+    override fun isEnabled(): Boolean = hci != null && pumpRunning.get()
 
     override fun getAdapterName(): String = "UsbBt(dongle${dongleLabel?.let { ":$it" } ?: ""})"
 
@@ -165,7 +163,8 @@ class UsbBtBluetoothAdapter(
                     pairingAgent = UsbBtPairingAgent(opened, linkKeys, pairingUiCallback).also { it.start() }
                     startPump(opened)
                     awaitingPermission.set(false)
-                    Log.i(TAG, "USB Bluetooth enabled: bdAddr=$localBdAddr vendor=${dongle.vendorLabel}")
+                    val enableMsg = "USB Bluetooth enabled: bdAddr=$localBdAddr vendor=${dongle.vendorLabel} advertising=DiPlay-${localBdAddr?.takeLast(5)?.replace(":", "") ?: "BT"}"
+                    UsbBtLog.log(appContext, TAG, enableMsg)
                     return true
                 }
             }
@@ -175,13 +174,14 @@ class UsbBtBluetoothAdapter(
         if (ungranted.isNotEmpty()) {
             val target = ungranted.first()
             if (awaitingPermission.compareAndSet(false, true)) {
-                Log.i(TAG, "enable: requesting USB permission for candidate: ${target.vendorLabel}")
+                val reqMsg = "enable: requesting USB permission for candidate: ${target.vendorLabel}"
+                UsbBtLog.log(appContext, TAG, reqMsg)
                 detector.ensurePermission(mgr, target)
             }
             return false
         }
 
-        Log.w(TAG, "enable: all candidate dongles failed to open/initialize")
+        UsbBtLog.warn(appContext, TAG, "enable: all candidate dongles failed to open/initialize")
         return false
     }
 
@@ -334,12 +334,15 @@ class UsbBtBluetoothAdapter(
             }
 
             // 5) Byte-stream facade.
-            return UsbBtRfcommStream(
+            val stream = UsbBtRfcommStream(
                 rfcomm = rfcomm,
                 dlc = dlc,
                 onClose = { teardown(handle) },
             )
+            UsbBtLog.log(appContext, TAG, "openRfcommStream: connected successfully to $deviceAddress (handle=0x${handle.toString(16)}, channel=$channel)")
+            return stream
         } catch (t: Throwable) {
+            UsbBtLog.warn(appContext, TAG, "openRfcommStream failed for $deviceAddress", t)
             // Only tear down the ACL when we created it for this call.
             if (freshAcl) teardown(handle) else releaseAclRef(handle)
             throw t
@@ -527,7 +530,7 @@ class UsbBtBluetoothAdapter(
         aclRefCount.clear()
         connectedOrder.clear()
         pendingAcl.clear()
-        Log.i(TAG, "USB Bluetooth shut down")
+        UsbBtLog.log(appContext, TAG, "USB Bluetooth shut down")
     }
 
     /** Snapshot for diagnostics (LegacyConnectionProbe). */
@@ -563,9 +566,8 @@ class UsbBtBluetoothAdapter(
 
     fun getStatus(): StatusInfo {
         val mgr = usbManager
-        val dongle = synchronized(lock) {
-            activeDevice?.let { dev -> detector.identify(dev) }
-        } ?: runCatching {
+        // UI reads must never wait for enable()'s USB initialization/retry lock.
+        val dongle = activeDevice?.let { detector.identify(it) } ?: runCatching {
             mgr?.let { detector.findDongles(it).firstOrNull() }
         }.getOrNull()
         val dev = dongle?.device

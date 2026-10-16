@@ -209,12 +209,10 @@ class UsbBtDongleDetector(private val appContext: Context) {
         return devices
             .mapNotNull { device ->
                 identify(device)?.also {
-                    Log.i(
-                        TAG,
-                        "Bluetooth dongle candidate: vid=0x${device.vendorId.toString(16)} " +
-                            "pid=0x${device.productId.toString(16)} vendor=${it.vendorLabel} " +
-                            "viaClassCode=${it.viaClassCode} hasPermission=${usbManager.hasPermission(device)}",
-                    )
+                    val candidateInfo = "Bluetooth dongle candidate: vid=0x${device.vendorId.toString(16)} " +
+                        "pid=0x${device.productId.toString(16)} vendor=${it.vendorLabel} " +
+                        "viaClassCode=${it.viaClassCode} hasPermission=${usbManager.hasPermission(device)}"
+                    UsbBtLog.log(appContext, TAG, candidateInfo)
                 }
             }
             .sortedWith(

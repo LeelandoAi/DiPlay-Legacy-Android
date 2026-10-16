@@ -7,7 +7,6 @@ import android.hardware.usb.UsbDeviceConnection
 import android.hardware.usb.UsbEndpoint
 import android.hardware.usb.UsbInterface
 import android.hardware.usb.UsbManager
-import android.util.Log
 
 /**
  * Diagnostic and self-test utility for external USB Bluetooth dongles.
@@ -46,6 +45,7 @@ object UsbBtSelfTest {
     }
 
     fun runWithManager(context: Context, usbManager: UsbManager, targetDevice: UsbDevice? = null): Report {
+        UsbBtLog.log(context, TAG, "=== 开始外置蓝牙硬件与通讯自检 ===")
         val detector = UsbBtDongleDetector(context.applicationContext)
         val dongles = detector.findDongles(usbManager)
         val candidate = targetDevice?.let { dev ->
@@ -53,6 +53,7 @@ object UsbBtSelfTest {
         } ?: dongles.firstOrNull()
 
         if (candidate == null) {
+            UsbBtLog.warn(context, TAG, "自检中止: 未检测到外置 USB 蓝牙适配器")
             return Report(
                 ok = false,
                 status = "NoDongle",
@@ -63,9 +64,17 @@ object UsbBtSelfTest {
         val device = candidate.device
         val vendorLabel = candidate.vendorLabel
         val logDetails = mutableListOf<String>()
-        logDetails.add("设备: $vendorLabel (VID=0x${device.vendorId.toString(16)} PID=0x${device.productId.toString(16)})")
+        fun failed(status: String, message: String): Report {
+            UsbBtLog.warn(context, TAG, message)
+            return Report(false, status, message, device = device,
+                vendorLabel = vendorLabel, details = logDetails.toList())
+        }
+        val devInfo = "设备: $vendorLabel (VID=0x${device.vendorId.toString(16)} PID=0x${device.productId.toString(16)})"
+        logDetails.add(devInfo)
+        UsbBtLog.log(context, TAG, devInfo)
 
         if (!usbManager.hasPermission(device)) {
+            UsbBtLog.warn(context, TAG, "自检中止: 未获取 USB 权限")
             return Report(
                 ok = false,
                 status = "NeedsPermission",
@@ -78,27 +87,37 @@ object UsbBtSelfTest {
         }
 
         // Open device
-        val connection: UsbDeviceConnection = usbManager.openDevice(device) ?: return Report(
-            ok = false,
-            status = "OpenFailed",
-            message = "打开 USB 设备连接失败 (openDevice returned null)",
-            device = device,
-            vendorLabel = vendorLabel,
-            details = logDetails,
-        )
-
-        try {
-            val btIface = findBluetoothInterface(device) ?: return Report(
+        val connection: UsbDeviceConnection = usbManager.openDevice(device) ?: run {
+            UsbBtLog.warn(context, TAG, "自检中止: 打开 USB 设备连接失败 (openDevice returned null)")
+            return Report(
                 ok = false,
-                status = "NoInterface",
-                message = "未找到可用的蓝牙 HCI 接口",
+                status = "OpenFailed",
+                message = "打开 USB 设备连接失败 (openDevice returned null)",
                 device = device,
                 vendorLabel = vendorLabel,
                 details = logDetails,
             )
-            logDetails.add("HCI 接口 ID: ${btIface.id}")
+        }
+
+        var claimedInterface: UsbInterface? = null
+        try {
+            val btIface = findBluetoothInterface(device) ?: run {
+                UsbBtLog.warn(context, TAG, "自检中止: 未找到可用的蓝牙 HCI 接口")
+                return Report(
+                    ok = false,
+                    status = "NoInterface",
+                    message = "未找到可用的蓝牙 HCI 接口",
+                    device = device,
+                    vendorLabel = vendorLabel,
+                    details = logDetails,
+                )
+            }
+            val ifaceInfo = "HCI 接口 ID: ${btIface.id}"
+            logDetails.add(ifaceInfo)
+            UsbBtLog.log(context, TAG, ifaceInfo)
 
             if (!connection.claimInterface(btIface, true)) {
+                UsbBtLog.warn(context, TAG, "自检中止: 占用接口失败 (claimInterface returned false)")
                 return Report(
                     ok = false,
                     status = "ClaimFailed",
@@ -108,16 +127,22 @@ object UsbBtSelfTest {
                     details = logDetails,
                 )
             }
+            claimedInterface = btIface
 
-            val endpoints = findEndpoints(btIface) ?: return Report(
-                ok = false,
-                status = "NoEndpoints",
-                message = "未找到完整 HCI 端点 (需要中断输入及批量收发端点)",
-                device = device,
-                vendorLabel = vendorLabel,
-                details = logDetails,
-            )
-            logDetails.add("端点: Event=0x${endpoints.event.address.toString(16)} ACL_IN=0x${endpoints.aclIn.address.toString(16)} ACL_OUT=0x${endpoints.aclOut.address.toString(16)}")
+            val endpoints = findEndpoints(btIface) ?: run {
+                UsbBtLog.warn(context, TAG, "自检中止: 未找到完整 HCI 端点")
+                return Report(
+                    ok = false,
+                    status = "NoEndpoints",
+                    message = "未找到完整 HCI 端点 (需要中断输入及批量收发端点)",
+                    device = device,
+                    vendorLabel = vendorLabel,
+                    details = logDetails,
+                )
+            }
+            val epInfo = "端点: Event=0x${endpoints.event.address.toString(16)} ACL_IN=0x${endpoints.aclIn.address.toString(16)} ACL_OUT=0x${endpoints.aclOut.address.toString(16)}"
+            logDetails.add(epInfo)
+            UsbBtLog.log(context, TAG, epInfo)
 
             // Step 1: Send HCI_RESET
             val resetPayload = HciProtocol.encodeCommand(HciProtocol.OP_RESET)
@@ -131,6 +156,7 @@ object UsbBtSelfTest {
                 TIMEOUT_MS,
             )
             if (resetSent != resetPayload.size) {
+                UsbBtLog.warn(context, TAG, "自检中止: HCI Reset 控制传输失败 (sent $resetSent/${resetPayload.size})")
                 return Report(
                     ok = false,
                     status = "ResetFailed",
@@ -141,10 +167,12 @@ object UsbBtSelfTest {
                 )
             }
             logDetails.add("HCI Reset 命令发送成功")
+            UsbBtLog.log(context, TAG, "HCI Reset 命令发送成功")
 
             // Wait for Reset Command Complete
             val resetEvent = pollEvent(connection, endpoints.event, HciProtocol.OP_RESET)
             if (resetEvent == null) {
+                UsbBtLog.warn(context, TAG, "自检中止: HCI Reset 响应超时")
                 return Report(
                     ok = false,
                     status = "ResetTimeout",
@@ -154,11 +182,16 @@ object UsbBtSelfTest {
                     details = logDetails,
                 )
             }
+            val resetStatus = resetEvent.returnParams.firstOrNull()?.toInt()?.and(0xFF)
+            if (resetStatus != 0) {
+                return failed("ResetFailed", "HCI Reset 失败 (status=${resetStatus?.let { "0x${it.toString(16)}" } ?: "missing"})")
+            }
             logDetails.add("HCI Reset 响应正常 (Command Complete)")
+            UsbBtLog.log(context, TAG, "HCI Reset 响应正常 (Command Complete)")
 
             // Step 2: Read BD_ADDR
             val bdAddrPayload = HciProtocol.encodeCommand(HciProtocol.OP_READ_BD_ADDR)
-            connection.controlTransfer(
+            val bdAddrSent = connection.controlTransfer(
                 HciProtocol.USB_BT_REQ_TYPE_CLASS_INTERFACE_OUT,
                 HciProtocol.USB_BT_CONTROL_REQUEST,
                 0,
@@ -167,17 +200,22 @@ object UsbBtSelfTest {
                 bdAddrPayload.size,
                 TIMEOUT_MS,
             )
+            if (bdAddrSent != bdAddrPayload.size) {
+                return failed("ReadBdAddrFailed", "读取本地 BD_ADDR 控制传输失败 (sent $bdAddrSent/${bdAddrPayload.size})")
+            }
             val bdAddrEvent = pollEvent(connection, endpoints.event, HciProtocol.OP_READ_BD_ADDR)
             val bdAddr = bdAddrEvent?.let { HciProtocol.parseBdAddr(it.returnParams) }
             if (bdAddr != null) {
-                logDetails.add("读取本地 BD_ADDR: $bdAddr")
+                val macMsg = "读取本地 BD_ADDR: $bdAddr"
+                logDetails.add(macMsg)
+                UsbBtLog.log(context, TAG, macMsg)
             } else {
-                logDetails.add("读取本地 BD_ADDR 失败或格式不符")
+                return failed("ReadBdAddrFailed", "读取本地 BD_ADDR 失败、超时或格式不符")
             }
 
             // Step 3: Read Buffer Size
             val bufPayload = HciProtocol.encodeCommand(HciProtocol.OP_READ_BUFFER_SIZE)
-            connection.controlTransfer(
+            val bufSent = connection.controlTransfer(
                 HciProtocol.USB_BT_REQ_TYPE_CLASS_INTERFACE_OUT,
                 HciProtocol.USB_BT_CONTROL_REQUEST,
                 0,
@@ -186,25 +224,32 @@ object UsbBtSelfTest {
                 bufPayload.size,
                 TIMEOUT_MS,
             )
+            if (bufSent != bufPayload.size) {
+                return failed("ReadBufferSizeFailed", "读取缓冲区控制传输失败 (sent $bufSent/${bufPayload.size})")
+            }
             val bufEvent = pollEvent(connection, endpoints.event, HciProtocol.OP_READ_BUFFER_SIZE)
             val bufferSize = bufEvent?.let { HciProtocol.parseBufferSize(it.returnParams) }
-            if (bufferSize != null) {
-                logDetails.add("ACL 数据包限制: ${bufferSize.aclDataPacketLength} 字节, 容量: ${bufferSize.totalNumAclPackets}")
+            if (bufferSize != null && bufferSize.aclDataPacketLength > 0 && bufferSize.totalNumAclPackets > 0) {
+                val bufMsg = "ACL 数据包限制: ${bufferSize.aclDataPacketLength} 字节, 容量: ${bufferSize.totalNumAclPackets}"
+                logDetails.add(bufMsg)
+                UsbBtLog.log(context, TAG, bufMsg)
+            } else {
+                return failed("ReadBufferSizeFailed", "读取缓冲区失败、超时或 ACL 容量无效")
             }
 
-            runCatching { connection.releaseInterface(btIface) }
-
+            val successMsg = "自检通过: 芯片通讯正常" + (if (bdAddr != null) " (MAC: $bdAddr)" else "")
+            UsbBtLog.log(context, TAG, "=== $successMsg ===")
             return Report(
                 ok = true,
                 status = "Success",
-                message = "自检通过: 芯片通讯正常" + (if (bdAddr != null) " (MAC: $bdAddr)" else ""),
+                message = successMsg,
                 device = device,
                 bdAddr = bdAddr,
                 vendorLabel = vendorLabel,
                 details = logDetails,
             )
         } catch (t: Throwable) {
-            Log.w(TAG, "Self-test error", t)
+            UsbBtLog.warn(context, TAG, "自检异常", t)
             return Report(
                 ok = false,
                 status = "Exception",
@@ -214,6 +259,7 @@ object UsbBtSelfTest {
                 details = logDetails,
             )
         } finally {
+            claimedInterface?.let { runCatching { connection.releaseInterface(it) } }
             runCatching { connection.close() }
         }
     }
@@ -265,10 +311,11 @@ object UsbBtSelfTest {
         expectedOpcode: Int,
         timeoutMs: Int = TIMEOUT_MS,
     ): HciProtocol.CommandComplete? {
-        val deadline = System.currentTimeMillis() + timeoutMs
+        val deadline = System.nanoTime() + java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(timeoutMs.toLong())
         val buf = ByteArray(HciProtocol.MAX_EVENT_PACKET_SIZE)
-        while (System.currentTimeMillis() < deadline) {
-            val read = connection.bulkTransfer(eventEndpoint, buf, buf.size, 500)
+        while (System.nanoTime() < deadline) {
+            val remaining = java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime())
+            val read = connection.bulkTransfer(eventEndpoint, buf, buf.size, remaining.coerceIn(1, 500).toInt())
             if (read > 0) {
                 val evt = HciProtocol.parseEvent(buf, read) ?: continue
                 if (evt.code == HciProtocol.EVT_COMMAND_COMPLETE) {
