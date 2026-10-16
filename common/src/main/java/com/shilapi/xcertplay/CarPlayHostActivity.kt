@@ -200,6 +200,7 @@ class CarPlayHostActivity : ComponentActivity() {
                 maybeStartCarPlay()
             } else {
                 setStatus(getString(R.string.vpn_consent_was_denied))
+                showVpnDeniedRetryDialog()
             }
         }
     private val wirelessPermissions =
@@ -440,6 +441,7 @@ class CarPlayHostActivity : ComponentActivity() {
      * anyway only produces an infinite retry loop with a cryptic error.
      */
     private var vpnConsentUnavailable = false
+    private var vpnDeniedDialog: android.app.AlertDialog? = null
     private var hotspotStatus = HotspotStatus(state = "off")
     private var menuOpen = false
     private var latestStage = "Preparing CarPlay"
@@ -806,6 +808,20 @@ class CarPlayHostActivity : ComponentActivity() {
                 setStatus(getString(R.string.vpn_consent_unavailable))
             }
         }
+    }
+
+    // Issue #188: denying VPN consent left the wired session dead with no way back
+    // except killing the app. Offer a retry that re-runs the system consent dialog.
+    private fun showVpnDeniedRetryDialog() {
+        if (shuttingDown.get() || isFinishing || isDestroyed) return
+        vpnDeniedDialog?.dismiss()
+        vpnDeniedDialog = android.app.AlertDialog.Builder(this)
+            .setTitle(getString(R.string.vpn_consent_was_denied))
+            .setMessage(getString(R.string.vpn_consent_denied_retry_hint))
+            .setPositiveButton(getString(R.string.vpn_consent_retry)) { _, _ -> requestVpnConsent() }
+            .setNegativeButton(getString(R.string.cancel), null)
+            .setOnDismissListener { vpnDeniedDialog = null }
+            .show()
     }
 
     private fun requestWirelessPermissions() {
@@ -1467,6 +1483,8 @@ class CarPlayHostActivity : ComponentActivity() {
         sessionLog?.close()
         if (crashDiagnosticLog === sessionLog) crashDiagnosticLog = null
         sessionLog = null
+        vpnDeniedDialog?.dismiss()
+        vpnDeniedDialog = null
         super.onDestroy()
     }
 
