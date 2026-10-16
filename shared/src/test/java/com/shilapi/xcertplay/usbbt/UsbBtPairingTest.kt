@@ -75,4 +75,38 @@ class UsbBtPairingTest {
             HciProtocol.OP_USER_CONFIRMATION_REQUEST_NEGATIVE_REPLY,
         )
     }
+
+    @Test
+    fun linkKeyAndPinCodeOpcodes() {
+        assertEquals(0x040B, HciProtocol.OP_LINK_KEY_REQUEST_REPLY)
+        assertEquals(0x040C, HciProtocol.OP_LINK_KEY_REQUEST_NEGATIVE_REPLY)
+        assertEquals(0x040D, HciProtocol.OP_PIN_CODE_REQUEST_REPLY)
+        assertEquals(0x040E, HciProtocol.OP_PIN_CODE_REQUEST_NEGATIVE_REPLY)
+    }
+
+    @Test
+    fun encodeLinkKeyReplyPayload() {
+        val bdAddr = byteArrayOf(0x01, 0x02, 0x03, 0x04, 0x05, 0x06)
+        val linkKey = ByteArray(16) { it.toByte() }
+        val params = HciProtocol.encodeLinkKeyReply(bdAddr, linkKey)
+        assertEquals(22, params.size)
+        assertEquals(bdAddr.toList(), params.copyOfRange(0, 6).toList())
+        assertEquals(linkKey.toList(), params.copyOfRange(6, 22).toList())
+    }
+
+    @Test
+    fun encodeLinkKeyNegativeReplyPayload() {
+        val bdAddr = byteArrayOf(0x01, 0x02, 0x03, 0x04, 0x05, 0x06)
+        val params = HciProtocol.encodeLinkKeyNegativeReply(bdAddr)
+        assertEquals(6, params.size)
+        assertEquals(bdAddr.toList(), params.toList())
+    }
+
+    @Test
+    fun encodePinCodeNegativeReplyPayload() {
+        val bdAddr = byteArrayOf(0x11, 0x22, 0x33, 0x44, 0x55, 0x66)
+        val params = HciProtocol.encodePinCodeNegativeReply(bdAddr)
+        assertEquals(6, params.size)
+        assertEquals(bdAddr.toList(), params.toList())
+    }
 }

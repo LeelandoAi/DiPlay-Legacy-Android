@@ -262,14 +262,20 @@ object HciProtocol {
     const val EVT_CONNECTION_REQUEST = 0x04
     const val EVT_DISCONNECTION_COMPLETE = 0x05
     const val EVT_NUM_COMPLETED_PACKETS = 0x13
+    const val EVT_PIN_CODE_REQUEST = 0x16
+    const val EVT_LINK_KEY_REQUEST = 0x17
+    const val EVT_LINK_KEY_NOTIFICATION = 0x18
     const val EVT_IO_CAPABILITY_REQUEST = 0x31
     const val EVT_USER_CONFIRMATION_REQUEST = 0x33
     const val EVT_SIMPLE_PAIRING_COMPLETE = 0x36
-    const val EVT_LINK_KEY_NOTIFICATION = 0x18
 
     val OP_CREATE_CONNECTION = opcode(0x01, 0x0005)
     val OP_DISCONNECT = opcode(0x01, 0x0006)
     val OP_ACCEPT_CONNECTION_REQUEST = opcode(0x01, 0x0009)
+    val OP_LINK_KEY_REQUEST_REPLY = opcode(0x01, 0x000B)
+    val OP_LINK_KEY_REQUEST_NEGATIVE_REPLY = opcode(0x01, 0x000C)
+    val OP_PIN_CODE_REQUEST_REPLY = opcode(0x01, 0x000D)
+    val OP_PIN_CODE_REQUEST_NEGATIVE_REPLY = opcode(0x01, 0x000E)
     val OP_IO_CAPABILITY_REQUEST_REPLY = opcode(0x01, 0x002B)
     val OP_USER_CONFIRMATION_REQUEST_REPLY = opcode(0x01, 0x002C)
     val OP_USER_CONFIRMATION_REQUEST_NEGATIVE_REPLY = opcode(0x01, 0x002D)
@@ -479,4 +485,26 @@ object HciProtocol {
             ((handle ushr 8) and 0xFF).toByte(),
             0x13,
         )
+
+    /** Encode Link_Key_Request_Reply: BD_ADDR(6 LE) | Link_Key(16). */
+    fun encodeLinkKeyReply(addrBytes: ByteArray, linkKey: ByteArray): ByteArray {
+        require(addrBytes.size == 6) { "BD_ADDR must be 6 bytes" }
+        require(linkKey.size == 16) { "Link Key must be 16 bytes" }
+        val out = ByteArray(22)
+        addrBytes.copyInto(out, 0)
+        linkKey.copyInto(out, 6)
+        return out
+    }
+
+    /** Encode Link_Key_Request_Negative_Reply: BD_ADDR(6 LE). */
+    fun encodeLinkKeyNegativeReply(addrBytes: ByteArray): ByteArray {
+        require(addrBytes.size == 6) { "BD_ADDR must be 6 bytes" }
+        return addrBytes.copyOf()
+    }
+
+    /** Encode PIN_Code_Request_Negative_Reply: BD_ADDR(6 LE). */
+    fun encodePinCodeNegativeReply(addrBytes: ByteArray): ByteArray {
+        require(addrBytes.size == 6) { "BD_ADDR must be 6 bytes" }
+        return addrBytes.copyOf()
+    }
 }

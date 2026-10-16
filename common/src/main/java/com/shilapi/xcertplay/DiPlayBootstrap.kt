@@ -18,6 +18,13 @@ internal object DiPlayBootstrap {
         if (ready) return
         val privateRoot = if (realSdkInt() >= Build.VERSION_CODES.LOLLIPOP) context.noBackupFilesDir else context.filesDir
         val target = File(privateRoot, LocalMfiAuthenticationClient.DIRECTORY)
+
+        // Fast path: if target directory already exists and files match assets, skip expensive crypto validation
+        if (matchesAssets(context, target)) {
+            ready = true
+            return
+        }
+
         val staging = File(privateRoot, "offline-mfi-staging")
         staging.deleteRecursively()
         check(staging.mkdirs()) { "Could not prepare local authentication" }
@@ -54,8 +61,33 @@ internal object DiPlayBootstrap {
             staging.deleteRecursively()
         }
         LocalMfiAuthenticationClient.load(target)
-        AirPlayPersistence.saveDebugLogsEnabled(context, false)
         ready = true
+    }
+
+    private fun matchesAssets(context: Context, target: File): Boolean {
+        if (!target.isDirectory) return false
+        return AUTH_FILES.all { name ->
+            val file = File(target, name)
+            if (!file.isFile) return false
+            try {
+                context.assets.open("offline-mfi/$name").use { assetStream ->
+                    file.inputStream().use { fileStream ->
+                        val b1 = ByteArray(1024)
+                        val b2 = ByteArray(1024)
+                        while (true) {
+                            val r1 = assetStream.read(b1)
+                            val r2 = fileStream.read(b2)
+                            if (r1 != r2) return false
+                            if (r1 < 0) break
+                            if (!b1.sliceArray(0 until r1).contentEquals(b2.sliceArray(0 until r2))) return false
+                        }
+                    }
+                }
+                true
+            } catch (_: Throwable) {
+                false
+            }
+        }
     }
 
     private fun sameAuthenticationFiles(first: File, second: File): Boolean =

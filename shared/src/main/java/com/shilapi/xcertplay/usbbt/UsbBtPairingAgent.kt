@@ -3,13 +3,21 @@ package com.shilapi.xcertplay.usbbt
 import android.util.Log
 import com.shilapi.xcertplay.usbbt.HciProtocol.EVT_IO_CAPABILITY_REQUEST
 import com.shilapi.xcertplay.usbbt.HciProtocol.EVT_LINK_KEY_NOTIFICATION
+import com.shilapi.xcertplay.usbbt.HciProtocol.EVT_LINK_KEY_REQUEST
+import com.shilapi.xcertplay.usbbt.HciProtocol.EVT_PIN_CODE_REQUEST
 import com.shilapi.xcertplay.usbbt.HciProtocol.EVT_SIMPLE_PAIRING_COMPLETE
 import com.shilapi.xcertplay.usbbt.HciProtocol.EVT_USER_CONFIRMATION_REQUEST
 import com.shilapi.xcertplay.usbbt.HciProtocol.IO_CAP_DISPLAY_YES_NO
 import com.shilapi.xcertplay.usbbt.HciProtocol.IO_CAP_NO_INPUT_NO_OUTPUT
 import com.shilapi.xcertplay.usbbt.HciProtocol.OP_IO_CAPABILITY_REQUEST_REPLY
+import com.shilapi.xcertplay.usbbt.HciProtocol.OP_LINK_KEY_REQUEST_NEGATIVE_REPLY
+import com.shilapi.xcertplay.usbbt.HciProtocol.OP_LINK_KEY_REQUEST_REPLY
+import com.shilapi.xcertplay.usbbt.HciProtocol.OP_PIN_CODE_REQUEST_NEGATIVE_REPLY
 import com.shilapi.xcertplay.usbbt.HciProtocol.OP_USER_CONFIRMATION_REQUEST_NEGATIVE_REPLY
 import com.shilapi.xcertplay.usbbt.HciProtocol.OP_USER_CONFIRMATION_REQUEST_REPLY
+import com.shilapi.xcertplay.usbbt.HciProtocol.encodeLinkKeyNegativeReply
+import com.shilapi.xcertplay.usbbt.HciProtocol.encodeLinkKeyReply
+import com.shilapi.xcertplay.usbbt.HciProtocol.encodePinCodeNegativeReply
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
@@ -97,6 +105,8 @@ class UsbBtPairingAgent(
             EVT_IO_CAPABILITY_REQUEST,
             EVT_USER_CONFIRMATION_REQUEST,
             EVT_LINK_KEY_NOTIFICATION,
+            EVT_LINK_KEY_REQUEST,
+            EVT_PIN_CODE_REQUEST,
             EVT_SIMPLE_PAIRING_COMPLETE -> {
                 executor?.execute {
                     runCatching { handleEvent(event) }
@@ -111,6 +121,8 @@ class UsbBtPairingAgent(
             EVT_IO_CAPABILITY_REQUEST -> onIoCapabilityRequest(event)
             EVT_USER_CONFIRMATION_REQUEST -> onUserConfirmationRequest(event)
             EVT_LINK_KEY_NOTIFICATION -> onLinkKeyNotification(event)
+            EVT_LINK_KEY_REQUEST -> onLinkKeyRequest(event)
+            EVT_PIN_CODE_REQUEST -> onPinCodeRequest(event)
             EVT_SIMPLE_PAIRING_COMPLETE -> onSimplePairingComplete(event)
             else -> { /* not pairing-related; ignore */ }
         }
@@ -213,6 +225,52 @@ class UsbBtPairingAgent(
         val bdAddr = bdAddrFrom(event) ?: return
         val key = event.params.copyOfRange(6, 22)
         linkKeys.store(bdAddr, key)
+    }
+
+    /**
+     * Link_Key_Request: params = BD_ADDR(6). If a link key is stored for this peer,
+     * reply with OP_LINK_KEY_REQUEST_REPLY. If not, reply with
+     * OP_LINK_KEY_REQUEST_NEGATIVE_REPLY so the controller knows to initiate pairing.
+     */
+    private fun onLinkKeyRequest(event: HciProtocol.HciEvent) {
+        if (event.params.size < 6) return
+        val bdAddr = bdAddrFrom(event) ?: return
+        val rawAddr = event.params.copyOfRange(0, 6)
+        val key = linkKeys.load(bdAddr)
+        if (key != null && key.size == 16) {
+            val reply = encodeLinkKeyReply(rawAddr, key)
+            when (val r = hci.sendCommand(OP_LINK_KEY_REQUEST_REPLY, reply)) {
+                is UsbBtHci.HciResult.Ok ->
+                    Log.i(TAG, "replied stored link key for $bdAddr")
+                is UsbBtHci.HciResult.Failed ->
+                    Log.w(TAG, "link key reply failed for $bdAddr: ${r.reason}")
+            }
+        } else {
+            val reply = encodeLinkKeyNegativeReply(rawAddr)
+            when (val r = hci.sendCommand(OP_LINK_KEY_REQUEST_NEGATIVE_REPLY, reply)) {
+                is UsbBtHci.HciResult.Ok ->
+                    Log.i(TAG, "replied negative link key for $bdAddr (initiating pairing)")
+                is UsbBtHci.HciResult.Failed ->
+                    Log.w(TAG, "negative link key reply failed for $bdAddr: ${r.reason}")
+            }
+        }
+    }
+
+    /**
+     * PIN_Code_Request: params = BD_ADDR(6). We use SSP exclusively, so reject PIN requests
+     * with OP_PIN_CODE_REQUEST_NEGATIVE_REPLY.
+     */
+    private fun onPinCodeRequest(event: HciProtocol.HciEvent) {
+        if (event.params.size < 6) return
+        val bdAddr = bdAddrFrom(event) ?: return
+        val rawAddr = event.params.copyOfRange(0, 6)
+        val reply = encodePinCodeNegativeReply(rawAddr)
+        when (val r = hci.sendCommand(OP_PIN_CODE_REQUEST_NEGATIVE_REPLY, reply)) {
+            is UsbBtHci.HciResult.Ok ->
+                Log.i(TAG, "replied negative pin code for $bdAddr")
+            is UsbBtHci.HciResult.Failed ->
+                Log.w(TAG, "negative pin code reply failed for $bdAddr: ${r.reason}")
+        }
     }
 
     private fun onSimplePairingComplete(event: HciProtocol.HciEvent) {

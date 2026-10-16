@@ -107,6 +107,20 @@ class UsbBtBluetoothAdapter(
     /** BD_ADDRs in most-recently-connected order (for getConnectedDevice). */
     private val connectedOrder = java.util.concurrent.ConcurrentLinkedDeque<String>()
 
+    init {
+        runCatching {
+            ensureUsbReceivers()
+            if (isSupported()) {
+                Thread({
+                    runCatching { enable() }
+                }, "UsbBtInitialEnable").apply {
+                    isDaemon = true
+                    start()
+                }
+            }
+        }
+    }
+
     // ------------------------------------------------------------------
     // CarPlayBluetooth
     // ------------------------------------------------------------------
@@ -232,6 +246,27 @@ class UsbBtBluetoothAdapter(
                             awaitingPermission.set(false)
                         }
                     }
+                    UsbManager.ACTION_USB_DEVICE_ATTACHED -> {
+                        val device = if (realSdkInt() >= Build.VERSION_CODES.TIRAMISU) {
+                            intent.getParcelableExtra(
+                                UsbManager.EXTRA_DEVICE,
+                                UsbDevice::class.java,
+                            )
+                        } else {
+                            @Suppress("DEPRECATION")
+                            intent.getParcelableExtra(UsbManager.EXTRA_DEVICE) as? UsbDevice
+                        }
+                        if (device != null && detector.identify(device) != null) {
+                            Log.i(TAG, "dongle attached (device=${device.deviceName}); bringing up USB Bluetooth")
+                            Thread({
+                                runCatching { enable() }
+                                    .onFailure { Log.w(TAG, "attach enable failed", it) }
+                            }, "UsbBtAttachEnable").apply {
+                                isDaemon = true
+                                start()
+                            }
+                        }
+                    }
                     UsbManager.ACTION_USB_DEVICE_DETACHED -> {
                         val device = if (realSdkInt() >= Build.VERSION_CODES.TIRAMISU) {
                             intent.getParcelableExtra(
@@ -251,7 +286,7 @@ class UsbBtBluetoothAdapter(
                             }
                             if (isTargetDongle) {
                                 Log.i(TAG, "dongle detached (device=${device.deviceName}); shutting down USB Bluetooth")
-                                shutdown()
+                                shutdown(unregisterReceivers = false)
                             } else {
                                 Log.i(TAG, "non-active USB peripheral detached (device=${device.deviceName}); ignoring")
                             }
@@ -261,6 +296,7 @@ class UsbBtBluetoothAdapter(
             }
         }
         val filter = IntentFilter(permissionAction).apply {
+            addAction(UsbManager.ACTION_USB_DEVICE_ATTACHED)
             addAction(UsbManager.ACTION_USB_DEVICE_DETACHED)
         }
         val registered = if (realSdkInt() >= Build.VERSION_CODES.TIRAMISU) {
@@ -505,14 +541,16 @@ class UsbBtBluetoothAdapter(
     }
 
     /** Shut the adapter down; idempotent. */
-    fun shutdown() {
+    fun shutdown(unregisterReceivers: Boolean = true) {
         pumpRunning.set(false)
         pumpThread?.interrupt()
         pumpThread = null
         pairingAgent?.stop()
         pairingAgent = null
-        runCatching { usbReceivers?.close() }
-        usbReceivers = null
+        if (unregisterReceivers) {
+            runCatching { usbReceivers?.close() }
+            usbReceivers = null
+        }
         awaitingPermission.set(false)
         synchronized(lock) {
             hci?.let { runCatching { it.close() } }

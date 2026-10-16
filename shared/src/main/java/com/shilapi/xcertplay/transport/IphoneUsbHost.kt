@@ -674,13 +674,20 @@ class Iap2UsbSession internal constructor(
     private fun readSynchronously(timeoutMillis: Long): ByteArray? {
         val deadline = System.nanoTime() + timeoutMillis * 1_000_000
         while (true) {
-            val remaining = ((deadline - System.nanoTime()) / 1_000_000).toInt().coerceIn(1, Int.MAX_VALUE)
+            checkOpen()
+            val now = System.nanoTime()
+            val remainingNanos = deadline - now
+            if (remainingNanos <= 0) return null
+            val remaining = (remainingNanos / 1_000_000).toInt().coerceIn(1, Int.MAX_VALUE)
             val transferred = try {
                 connection.bulkTransfer(inEndpoint, syncReadBuffer, syncReadBuffer.size, remaining)
             } catch (error: RuntimeException) {
                 throw failSession("USBMUX read failed", error)
             }
             if (transferred > 0) return syncReadBuffer.copyOf(transferred)
+            if (transferred <= 0) {
+                if (System.nanoTime() >= deadline) return null
+            }
         }
     }
 

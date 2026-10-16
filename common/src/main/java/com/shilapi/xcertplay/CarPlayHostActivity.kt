@@ -969,7 +969,14 @@ class CarPlayHostActivity : ComponentActivity() {
             return
         }
         if (!menuOpen) {
+            val previousWireless = wirelessEnabled
             loadConnectionSettings()
+            if (previousWireless != wirelessEnabled) {
+                if (controller != null) {
+                    restartCarPlay("switching to ${if (wirelessEnabled) "wireless" else "USB"}")
+                }
+                requestStartupPrerequisites()
+            }
             val savedDockAutoHide = AirPlayPersistence.loadDockAutoHide(this)
             if (savedDockAutoHide != dockAutoHideEnabled) {
                 dockAutoHideEnabled = savedDockAutoHide

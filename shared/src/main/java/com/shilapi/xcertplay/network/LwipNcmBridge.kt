@@ -301,9 +301,12 @@ class LwipNcmBridge(
         // are dropped with the link going down. Guard for a start() that threw before
         // the thread was created.
         if (::ncmTxThread.isInitialized) join(ncmTxThread)
-        ncm.close()
+        // Wait for the RX thread to finish its in-flight read and exit BEFORE closing NCM
+        // and releasing interfaces. Releasing an interface while a native bulkTransfer ioctl
+        // is active causes an uninterruptible driver deadlock on Allwinner T3 kernels.
+        if (::ncmRxThread.isInitialized) join(ncmRxThread)
         lwipNative.destroy()
-        join(ncmRxThread)
+        ncm.close()
     }
 
     private fun join(thread: Thread) {
@@ -339,7 +342,7 @@ class LwipNcmBridge(
 
     private companion object {
         const val TAG = "xcertplay-usb"
-        const val READ_TIMEOUT_MILLIS = 1_000L
+        const val READ_TIMEOUT_MILLIS = 200L
         const val WRITE_TIMEOUT_MILLIS = 2_000
         const val JOIN_TIMEOUT_MILLIS = 2_000L
         const val NA_RETRY_INTERVAL_NANOS = 500_000_000L
