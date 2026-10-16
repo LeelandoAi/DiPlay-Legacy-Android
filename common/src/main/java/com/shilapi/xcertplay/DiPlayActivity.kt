@@ -2042,6 +2042,18 @@ class DiPlayActivity : ComponentActivity() {
     // BYD shows that screen as a dialog and closes it unless its own settings or the car home screen is on top,
     // so the home screen goes first.
     private fun openCarWifiSettings() {
+        // Issue #200: on API < 19 ROMs the WIFI_TETHER_SETTINGS action can resolve to
+        // the plain Wi-Fi settings page instead of tethering. Prefer the explicit AOSP
+        // TetherSettings activity there; it exists on 4.x and the resolve check keeps
+        // vendor ROMs without it on the old path.
+        if (realSdkInt() < Build.VERSION_CODES.KITKAT) {
+            val tether = Intent().setClassName("com.android.settings", "com.android.settings.TetherSettings")
+            if (packageManager.resolveActivity(tether, 0) != null &&
+                runCatching { startActivity(tether) }.isSuccess
+            ) {
+                return
+            }
+        }
         val hotspot = Intent("com.android.settings.WIFI_TETHER_SETTINGS")
         val target = packageManager.resolveActivity(hotspot, 0)?.activityInfo?.packageName
         if (target == null) {
