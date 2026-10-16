@@ -98,7 +98,7 @@ import com.shilapi.xcertplay.transport.LockdownPairingClient
 import com.shilapi.xcertplay.transport.LockdownPairRecord
 import com.shilapi.xcertplay.transport.NcmFunctionDiscovery
 import com.shilapi.xcertplay.transport.NcmUsbBridge
-import com.shilapi.xcertplay.transport.SharedUsbDeviceConnection
+import com.shilapi.xcertplay.util.safeStackTrace
 import java.io.Closeable
 import java.io.IOException
 import java.net.InetAddress
@@ -3191,7 +3191,10 @@ class CarPlayController(
                 if (!wirelessFailureReported.compareAndSet(false, true)) return
                 firstTcpWatchdog?.terminate()
             }
-            val causes = generateSequence(error) { it.cause }.toList()
+            val seenCauses = HashSet<Throwable>()
+            val causes = generateSequence(error) { it.cause }
+                .takeWhile { seenCauses.add(it) }
+                .toList()
             onStatus(CarPlayStatus.Failed(error.message ?: error.javaClass.simpleName,
                 causes.any { it is com.shilapi.xcertplay.network.P2pResetRequiredException },
                 causes.filterIsInstance<WirelessStartupException>().firstOrNull()?.reason),
@@ -3240,7 +3243,12 @@ class CarPlayController(
         ((System.nanoTime() - startedNanos) / 1_000_000L).coerceAtLeast(0)
 
     private fun debugLog(message: String, error: Throwable) {
-        Log.w(IphoneCarPlayConfiguration.TAG, message, error)
+        val safeTrace = runCatching { error.safeStackTrace(maxCauses = 4, maxFramesPerCause = 30) }.getOrNull()
+        if (safeTrace != null) {
+            Log.w(IphoneCarPlayConfiguration.TAG, "$message: ${describeThrowable(error)}\n$safeTrace")
+        } else {
+            Log.w(IphoneCarPlayConfiguration.TAG, "$message: ${describeThrowable(error)}")
+        }
         try {
             uiListener?.onDebugLog("$message: ${describeThrowable(error)}")
         } catch (callbackError: Exception) {
