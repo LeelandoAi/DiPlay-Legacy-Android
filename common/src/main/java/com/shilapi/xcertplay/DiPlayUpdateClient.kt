@@ -314,7 +314,10 @@ internal object DiPlayUpdateClient {
             if (candidate.protocol != "https" || !approvedHost) {
                 throw IOException("Untrusted update redirect")
             }
-            var connection = if (realSdkInt() < 22) {
+            // Issue #141: Android 6.0's system CA store is frozen at 2015 and no longer
+            // validates GitHub's current chain ("Trust anchor not found"), so the
+            // bundled CA roots + Conscrypt TLS 1.2 stack cover API < 24, not just < 22.
+            var connection = if (realSdkInt() < 24) {
                 legacyHttp.open(candidate) as HttpsURLConnection
             } else {
                 candidate.openConnection() as HttpsURLConnection
@@ -327,7 +330,7 @@ internal object DiPlayUpdateClient {
                 // OEM Android 5+ frameworks can also expose an SSLv3-only
                 // TLS fallback; retry that exact failure with bundled Conscrypt.
                 // Do not retry certificate, hostname, or other handshake errors.
-                if (realSdkInt() < 22 || !isObsoleteSslv3Failure(failure)) {
+                if (realSdkInt() < 24 || !isObsoleteSslv3Failure(failure)) {
                     throw failure
                 }
                 android.util.Log.w("DiPlayUpdate", "System TLS offered only SSLv3; retrying TLS 1.2")
