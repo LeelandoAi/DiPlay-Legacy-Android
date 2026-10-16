@@ -6,6 +6,8 @@ import com.shilapi.xcertplay.transport.NcmUsbBridge
 import java.io.Closeable
 import java.io.IOException
 import java.net.InetAddress
+import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -53,6 +55,15 @@ class LwipNcmBridge(
     private var lastNaTimeNanos = 0L
     private val running = AtomicBoolean(false)
     private lateinit var ncmRxThread: Thread
+    private lateinit var ncmTxThread: Thread
+    // Issue #187: lwIP's linkoutput runs on the native worker thread while holding the native
+    // ctx lock; doing blocking USB bulkTransfer there (up to 2s) convoys every other native
+    // call and can wedge a fragile USB host driver (whole-unit freeze on T3 cold-start wired).
+    // Hand TX frames to a dedicated thread instead; the queue is bounded so a wedged USB
+    // endpoint drops frames instead of growing without limit.
+    private val txQueue = LinkedBlockingQueue<ByteArray>(TX_QUEUE_CAPACITY)
+    private val droppedTxFrames = AtomicInteger(0)
+    private var txDropLogBudget = 4
 
     private val lwipNative = LwipNcmNative(
         onTxFrameCallback = ::onLwipTxFrame,
@@ -74,6 +85,11 @@ class LwipNcmBridge(
             isDaemon = true
             start()
         }
+        txQueue.clear()
+        ncmTxThread = Thread(::runNcmTx, "ncm-lwip-tx").apply {
+            isDaemon = true
+            start()
+        }
     }
 
     fun registerPort(port: Int, isTcp: Boolean) {
@@ -82,10 +98,28 @@ class LwipNcmBridge(
 
     private fun onLwipTxFrame(frame: ByteArray) {
         if (!running.get()) return
+        // Non-blocking: never stall the native lwIP worker thread on USB I/O (issue #187).
+        if (!txQueue.offer(frame)) {
+            droppedTxFrames.incrementAndGet()
+            if (txDropLogBudget > 0) {
+                txDropLogBudget--
+                runCatching { onDebugLog("ncm lwip tx queue full; dropping frame bytes=${frame.size}") }
+            }
+        }
+    }
+
+    private fun runNcmTx() {
         try {
-            ncm.send(frame, WRITE_TIMEOUT_MILLIS)
-        } catch (error: Exception) {
-            Log.w(TAG, "ncm send lwip tx frame failed: ${error.message}")
+            while (running.get()) {
+                val frame = txQueue.poll(TX_POLL_MILLIS, TimeUnit.MILLISECONDS) ?: continue
+                try {
+                    ncm.send(frame, WRITE_TIMEOUT_MILLIS)
+                } catch (error: Exception) {
+                    Log.w(TAG, "ncm send lwip tx frame failed: ${error.message}")
+                }
+            }
+        } catch (_: InterruptedException) {
+            Thread.currentThread().interrupt()
         }
     }
 
@@ -263,6 +297,10 @@ class LwipNcmBridge(
 
     override fun close() {
         if (!running.compareAndSet(true, false)) return
+        // Stop the TX thread first so no new USB writes start; remaining queued frames
+        // are dropped with the link going down. Guard for a start() that threw before
+        // the thread was created.
+        if (::ncmTxThread.isInitialized) join(ncmTxThread)
         ncm.close()
         lwipNative.destroy()
         join(ncmRxThread)
@@ -305,5 +343,7 @@ class LwipNcmBridge(
         const val WRITE_TIMEOUT_MILLIS = 2_000
         const val JOIN_TIMEOUT_MILLIS = 2_000L
         const val NA_RETRY_INTERVAL_NANOS = 500_000_000L
+        const val TX_QUEUE_CAPACITY = 64
+        const val TX_POLL_MILLIS = 200L
     }
 }
