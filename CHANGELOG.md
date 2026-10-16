@@ -1,3 +1,15 @@
+# DiPlay 0.2.68 — 2026-10-16
+
+- Dedicated thread for lwIP transmit: move lwIP network frame output to a dedicated sender thread, eliminating native lock contention and boosting throughput (#187).
+- StartSession event precision matching: avoid watchdog-triggered handshake cancellations during wired setup (#187).
+- Local VPN permission retry dialog: prompt driver to re-grant VPN consent when dismissed, eliminating dead-end connection attempts (#188).
+- AirPlay TIME_WAIT & dual-stack socket binding: robust port reuse and dual-stack fallback for faster wireless reconnection.
+- Legacy ROM Cipher.updateAAD fallback: dynamically detect updateAAD availability and smoothly fallback to BouncyCastle on API 17 / pseudo-4.4 units (#189).
+- Upstream feature ports: WheelSiriKey double-click detection (#813), car hotspot retry loop avoidance (#789), and phone call earphone-to-speaker forced routing (#797).
+- Automated release verification: ensure published APK strictly corresponds to current git tree with 0 diffs.
+
+See [v0.2.68 release notes](docs/RELEASE-NOTES-0.2.68.md) for validation and device-testing limits.
+
 # DiPlay 0.2.67 — 2026-10-16
 
 - Fix Android 4.x startup crash (NoClassDefFoundError): include LoggingGate and FloatingDotOverlay in multidex main DEX keep rules and eliminate kotlin.Result from cold-start Application.onCreate.
