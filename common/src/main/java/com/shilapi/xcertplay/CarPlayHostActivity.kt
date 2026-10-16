@@ -196,11 +196,37 @@ class CarPlayHostActivity : ComponentActivity() {
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
             awaitingVpnConsent = false
             if (result.resultCode == RESULT_OK) {
+                vpnConsentInstantDenyCount = 0
                 vpnReady = true
                 maybeStartCarPlay()
             } else {
-                setStatus(getString(R.string.vpn_consent_was_denied))
-                showVpnDeniedRetryDialog()
+                // Issue #188 follow-up: on stripped API-17 ROMs the system VPN consent
+                // activity can finish with CANCELED instantly — no user interaction is
+                // possible, so this is a broken system dialog, not a user denial. Two
+                // instant denials in a row mean the ROM can never grant consent: stop
+                // the deny/retry loop and take the direct wired attempt, same as the
+                // missing-dialog fallback. A genuine user denial takes longer than
+                // VPN_CONSENT_MIN_HUMAN_MILLIS and keeps the retry dialog.
+                val elapsed = SystemClock.elapsedRealtime() - vpnConsentLaunchElapsed
+                vpnConsentInstantDenyCount =
+                    if (elapsed < VPN_CONSENT_MIN_HUMAN_MILLIS) vpnConsentInstantDenyCount + 1 else 0
+                if (vpnConsentInstantDenyCount >= VPN_CONSENT_INSTANT_DENY_LIMIT) {
+                    vpnConsentInstantDenyCount = 0
+                    vpnDeniedDialog?.dismiss()
+                    vpnDeniedDialog = null
+                    Log.w(TAG, "VPN consent dialog closed instantly twice; treating as broken system dialog")
+                    appendLog("VPN consent dialog keeps closing instantly; attempting direct wired connection")
+                    vpnConsentUnavailable = true
+                    vpnReady = true
+                    runCatching { maybeStartCarPlay() }
+                        .onFailure { startError ->
+                            appendLog("Wired fallback start failed ${startError.javaClass.simpleName}: ${startError.message}")
+                        }
+                    setStatus(getString(R.string.vpn_consent_launch_failed))
+                } else {
+                    setStatus(getString(R.string.vpn_consent_was_denied))
+                    showVpnDeniedRetryDialog()
+                }
             }
         }
     private val wirelessPermissions =
@@ -431,6 +457,8 @@ class CarPlayHostActivity : ComponentActivity() {
     private var manualHotspotChannel = 0
     private var manualHotspotSecurity = ManualHotspotSecurity.OPEN
     private var awaitingVpnConsent = false
+    private var vpnConsentLaunchElapsed = 0L
+    private var vpnConsentInstantDenyCount = 0
     private var awaitingWirelessPermissions = false
     private var awaitingLocationPermission = false
     private var vpnReady = false
@@ -782,6 +810,7 @@ class CarPlayHostActivity : ComponentActivity() {
         } else {
             vpnReady = false
             awaitingVpnConsent = true
+            vpnConsentLaunchElapsed = SystemClock.elapsedRealtime()
             try {
                 vpnConsent.launch(consent)
             } catch (e: ActivityNotFoundException) {
@@ -5491,6 +5520,13 @@ class CarPlayHostActivity : ComponentActivity() {
         const val CONFIGURATION_POLL_INTERVAL_MILLIS = 2_000L
         const val RECONNECT_DELAY_MILLIS = 2_000L
         const val IAP_TUNNEL_RECONNECT_DELAY_MILLIS = 15_000L
+        /**
+         * Issue #188 follow-up: a human cannot read and dismiss the system VPN
+         * consent dialog faster than this. A quicker CANCELED round-trip means the
+         * ROM's consent activity is broken (returns instantly), not a user denial.
+         */
+        const val VPN_CONSENT_MIN_HUMAN_MILLIS = 1_500L
+        const val VPN_CONSENT_INSTANT_DENY_LIMIT = 2
         const val CONTROLLER_CLOSE_TIMEOUT_MILLIS = 4_000L
         const val AUDIO_CAPTURE_MARKER = "audio-capture.enabled"
         const val AUDIO_CAPTURE_DIRECTORY = "audio-captures"
