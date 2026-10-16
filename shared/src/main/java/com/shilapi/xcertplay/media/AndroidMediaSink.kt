@@ -573,12 +573,30 @@ class AndroidMediaSink(
             savedAudioMode = manager.mode
             manager.mode = AudioManager.MODE_IN_COMMUNICATION
             communicationModeStream = id
+            earpieceFallbackTried = false
             Log.i("xcertplay-usb", "audio mode $savedAudioMode -> ${manager.mode} for telephony stream=$id")
             runCatching {
                 onAudioDiagnostic("Audio: mode entered communication from=$savedAudioMode" +
                     " now=${manager.mode} stream=$id")
             }
         }
+    }
+
+    /**
+     * Port of upstream #797: some phone-chip head units route CarPlay calls to the
+     * built-in earpiece, which nobody hears in a car. When detected, force the
+     * loudspeaker on. Once per call, only in communication mode.
+     */
+    private var earpieceFallbackTried = false // guarded by audioModeLock
+    private fun moveCallToLoudspeaker(id: AudioStreamId) {
+        val manager = audioManager ?: return
+        val line = synchronized(audioModeLock) {
+            if (communicationModeStream != id || earpieceFallbackTried) return
+            earpieceFallbackTried = true
+            runCatching { manager.isSpeakerphoneOn = true }
+            "Audio: call routed to the earpiece; forced loudspeaker on stream=$id"
+        }
+        runCatching { onAudioDiagnostic(line) }
     }
 
     private fun restoreAudioMode(id: AudioStreamId?) {
@@ -682,7 +700,11 @@ class AndroidMediaSink(
             onAudioDiagnostic,
             echoReference,
             callVoiceFilter && format.audioType == TELEPHONY_AUDIO_TYPE,
-        ).also { audioRenderers[id] = it }
+        ).also {
+            // Port of upstream #797: if the call lands on the earpiece, move it to the loudspeaker.
+            if (format.audioType == TELEPHONY_AUDIO_TYPE) it.onRoutedToEarpiece = { moveCallToLoudspeaker(id) }
+            audioRenderers[id] = it
+        }
     }
 
     private companion object {
@@ -1326,6 +1348,9 @@ private class AudioRenderer(
     /** Receives the played call audio so the call microphone can cancel its echo. */
     private val echoReference: EchoReference? = null,
     voiceFilter: Boolean = false,
+    /** Called when this call's track is routed to the earpiece; the sink moves the call to the loudspeaker. */
+    var onRoutedToEarpiece: (() -> Unit)? = null,
+    private var routingListener: Any? = null,
 ) : Closeable {
     private data class AudioPacket(val rtp: ByteArray, val sample: Int)
 
@@ -1598,6 +1623,22 @@ private class AudioRenderer(
             )
         }
         track = built
+        // Port of upstream #797: listen for the call track being routed to the earpiece
+        // (some phone-chip head units do this; nobody hears it in a car). API 24+ only,
+        // guarded by SDK check to avoid VerifyError on API 17-23.
+        if (format.audioType == AndroidMediaSink.TELEPHONY_AUDIO_TYPE &&
+            realSdkInt() >= Build.VERSION_CODES.N) {
+            runCatching {
+                val listener = android.media.AudioRouting.OnRoutingChangedListener { routing ->
+                    val device = routing.routedDevice
+                    if (device?.type == android.media.AudioDeviceInfo.TYPE_BUILTIN_EARPIECE) {
+                        onRoutedToEarpiece?.invoke()
+                    }
+                }
+                built.addOnRoutingChangedListener(listener, Handler(Looper.getMainLooper()))
+                routingListener = listener
+            }
+        }
         diagnosticStage = "track-attributes"
         trackAttributes = if (realSdkInt() >= 21) attributes?.let {
             audioTrackAttributesForFocus(built, it as AudioAttributes)
@@ -2125,6 +2166,15 @@ private class AudioRenderer(
         val track = track
         this.track = null
         if (track != null) {
+            // Port of upstream #797: remove the routing listener (API 24+ only).
+            if (realSdkInt() >= Build.VERSION_CODES.N) {
+                runCatching {
+                    @Suppress("UNCHECKED_CAST")
+                    val listener = routingListener as? android.media.AudioRouting.OnRoutingChangedListener
+                    if (listener != null) track.removeOnRoutingChangedListener(listener)
+                }
+            }
+            routingListener = null
             try {
                 track.pause()
             } catch (_: Exception) {
