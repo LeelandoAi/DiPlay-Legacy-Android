@@ -1,3 +1,10 @@
+# DiPlay 0.2.69 — 2026-10-16
+
+- Fix Android 4.2 / API 17 music playback crash: adapt `registerMediaButtonEventReceiver` and `unregisterMediaButtonEventReceiver` to use `ComponentName` on API < 18, eliminating `NoSuchMethodError` when launching music or Now Playing (#197).
+- Legacy audio media key resilience: wrap media-key registration, RemoteControlClient setup, and playback state updates in defensive exception handlers to avoid aborting on broken custom ROMs.
+
+See [v0.2.69 release notes](docs/RELEASE-NOTES-0.2.69.md) for validation and device-testing limits.
+
 # DiPlay 0.2.68 — 2026-10-16
 
 - Dedicated thread for lwIP transmit: move lwIP network frame output to a dedicated sender thread, eliminating native lock contention and boosting throughput (#187).
