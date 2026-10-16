@@ -2,6 +2,8 @@
 
 - Fix Android 4.2 / API 17 music playback crash: adapt `registerMediaButtonEventReceiver` and `unregisterMediaButtonEventReceiver` to use `ComponentName` on API < 18, eliminating `NoSuchMethodError` when launching music or Now Playing (#197).
 - Legacy audio media key resilience: wrap media-key registration, RemoteControlClient setup, and playback state updates in defensive exception handlers to avoid aborting on broken custom ROMs.
+- Bundle Realtek USB Bluetooth firmware: package official firmware for 16 Realtek controller families (RTL8723A/B/D, RTL8761A/B/C, RTL8821A/C, RTL8822B/C, RTL8851B, RTL8852A/B/C, RTL8922A) for plug-and-play external dongle support on legacy head units.
+- Android 4.4 steering-wheel media key forwarding: fix missing key delivery when media session is null on older platforms.
 
 See [v0.2.69 release notes](docs/RELEASE-NOTES-0.2.69.md) for validation and device-testing limits.
 

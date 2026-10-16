@@ -29,8 +29,8 @@
     "features": [
       "Fix Android 4.2 / API 17 music playback crash: adapt registerMediaButtonEventReceiver to ComponentName on API < 18, eliminating NoSuchMethodError during audio playback (#197).",
       "Defensive legacy audio exception handling: safeguard media-key registration, RemoteControlClient setup, and playback state updates against custom vendor ROM failures.",
+      "Bundle Realtek USB Bluetooth firmware: package official firmware for 16 Realtek controller families for plug-and-play external dongles on legacy head units.",
       "Dedicated lwIP transmit thread: move network frame delivery to an independent thread, eliminating native lock contention and boosting throughput (#187).",
-      "lwIP heap concurrency protection: mutex-guard input pbuf allocation to prevent heap corruption and SIGABRT crashes.",
       "Android 4.2 video playback fix: guard MediaCodec.getName() behind API 21 check, resolving NoSuchMethodError on legacy runtimes."
     ],
     "compat": "Before you try it",
@@ -268,8 +268,8 @@
     "features": [
       "彻底修复 Android 4.2 / API 17 点击播放音乐时闪退：自适应切换 API < 18 的 ComponentName 媒体按键注册机制，解决 registerMediaButtonEventReceiver 抛出 NoSuchMethodError 崩溃（#197）。",
       "老旧车机音频按键与会话全方位容错保护：对媒体按键注册、RemoteControlClient 注入及播放状态更新增加全面异常防御，杜绝定制 ROM 崩溃。",
+      "内置 16 款 Realtek 蓝牙控制器全系固件：覆盖 RTL8723/8761/8821/8822/8851/8852/8922 全系芯片，老旧车机即插即用外置 USB 蓝牙适配器。",
       "lwIP 数据发送改走独立线程：将 lwIP 数据输出转移至独立发送线程异步执行，消除 native 互斥锁阻塞，提升高码率吞吐与流畅度（#187）。",
-      "lwIP 内存堆并发安全保护：将输入帧 pbuf_alloc 移入互斥锁保护，彻底杜绝多线程竞争造成的内存堆损坏与 SIGABRT 闪退。",
       "Android 4.2 视频播放闪退修复：对 MediaCodec.getName() 增加 API 21 版本安全防护，解决老旧车机解码画面时抛出 NoSuchMethodError。"
     ],
     "compat": "试用前请了解",
