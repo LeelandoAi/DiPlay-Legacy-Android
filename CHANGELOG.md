@@ -1,3 +1,9 @@
+# DiPlay 0.2.67 — 2026-10-16
+
+- Fix Android 4.x startup crash (NoClassDefFoundError): include LoggingGate and FloatingDotOverlay in multidex main DEX keep rules and eliminate kotlin.Result from cold-start Application.onCreate.
+
+See [v0.2.67 release notes](docs/RELEASE-NOTES-0.2.67.md) for validation and device-testing limits.
+
 # DiPlay 0.2.66 — 2026-10-16
 
 - Fix Android 4.2 SETUP loop failure & connection stall: DatagramSocket does not implement Closeable on API < 19; eliminate ClassCastException in socket binding to allow reliable handshake.

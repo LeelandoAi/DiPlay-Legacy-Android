@@ -18,8 +18,14 @@ class DiPlayApplication : MultiDexApplication() {
         setupCrashHandler()
         // Session log output switch (issue #186): loaded once per process; toggling the
         // setting in Settings takes effect after restarting the app.
-        LoggingGate.init(this)
-        FloatingDotOverlay.restoreIfEnabled(this)
+        try {
+            LoggingGate.init(this)
+        } catch (ignored: Throwable) {
+        }
+        try {
+            FloatingDotOverlay.restoreIfEnabled(this)
+        } catch (ignored: Throwable) {
+        }
     }
 
     private fun setupCrashHandler() {

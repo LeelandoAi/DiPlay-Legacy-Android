@@ -3,7 +3,7 @@
     "name": "English",
     "dir": "ltr",
     "tag": "Legacy Android compatibility edition (Android 4.2+)",
-    "badge": "v0.2.66 RELEASE",
+    "badge": "v0.2.67 RELEASE",
     "title": "Your iPhone.\nCarPlay for legacy Android head units.",
     "intro": "DiPlay Legacy brings wired and wireless CarPlay to older Android head units (Android 4.2 / API 17+), with native multi-architecture support (ARMv7, x86, ARM64).",
     "download": "Download APK",
@@ -25,13 +25,13 @@
     ],
     "adb": "Installation & connection help",
     "bssid": "ADB is not required for everyday use. APK installation options depend on the car. No manual MAC address entry.",
-    "whats": "New in v0.2.66",
+    "whats": "New in v0.2.67",
     "features": [
+      "Fix Android 4.x startup crash (NoClassDefFoundError): ensure LoggingGate and FloatingDotOverlay reside in main DEX, eliminating launch failure on Dalvik runtimes.",
       "Fix Android 4.2 SETUP loop failure: eliminate DatagramSocket Closeable ClassCastException on API < 19 so iPhone handshake connects reliably.",
       "Diagnostic logging toggle: add option in Settings → Diagnostics to disable session logging, significantly reducing CPU & disk I/O overhead on older head units.",
       "Full-screen app view & dock auto-hide gesture: optional toggle under Display settings to hide the CarPlay dock for full-screen navigation, with edge-swipe gesture to reveal.",
-      "Instant wired reconnect: eliminate 1-2 minute reconnect delay after physical USB cable replug.",
-      "TCP link stability & frame throughput: optimize userspace lwIP packet handling and IPv6 neighbor solicitations."
+      "Instant wired reconnect: eliminate 1-2 minute reconnect delay after physical USB cable replug."
     ],
     "compat": "Before you try it",
     "compatText": "Refactored and maintained for legacy head units. Install over an existing version only when the package and signing certificate match. Upstream or Debug-signed versions may require reinstalling; save your settings and reports first.",
@@ -242,7 +242,7 @@
     "name": "简体中文",
     "dir": "ltr",
     "tag": "深度兼容老款车机版本 (Android 4.2+)",
-    "badge": "v0.2.66 发布版",
+    "badge": "v0.2.67 发布版",
     "title": "你的 iPhone。\n老款安卓车机的 CarPlay 方案。",
     "intro": "DiPlay Legacy 专为老款 Android 车机（最低支持 Android 4.2 / API 17）深度优化，提供有线与无线 CarPlay 互联体验，支持 ARMv7、x86、ARM64 等多种硬件芯片架构。",
     "download": "下载 APK",
@@ -264,13 +264,13 @@
     ],
     "adb": "安装与连接指南",
     "bssid": "日常使用不需要 ADB。APK 安装方式取决于车机。无需手动输入 MAC 地址。",
-    "whats": "v0.2.66 更新亮点",
+    "whats": "v0.2.67 更新亮点",
     "features": [
+      "彻底修复 Android 4.x 启动闪退（NoClassDefFoundError）：将 LoggingGate 与 FloatingDotOverlay 纳入主 DEX 规则，杜绝老旧 Dalvik 虚拟机类加载缺失崩溃。",
       "修复 Android 4.2 及以下 SETUP 循环失败与握手卡死：解除 DatagramSocket Closeable 类型强转异常，保障低版本车机平稳握手。",
       "诊断日志收集独立控制开关：在「设置 → 诊断」增加日志输出开关，关闭后跳过会话脱敏与 I/O 写入，大幅降低老车机 CPU/IO 负载。",
       "全屏显示应用区域与边缘滑出手势（可选开关）：在「设置 → 显示」新增开关，隐藏侧边 Dock 栏实现应用满屏显示，从边缘向内滑动即可唤出侧边栏。",
-      "有线拔插即时秒级重连：优化拔出复位链路与会话重置，彻底消除拔插后需等待 1-2 分钟的重连延迟。",
-      "TCP 丢包与传输稳定性优化：增强用户态 lwIP 数据帧中继与 IPv6 邻居应答机制，消除传输卡顿。"
+      "有线拔插即时秒级重连：优化拔出复位链路与会话重置，彻底消除拔插后需等待 1-2 分钟的重连延迟。"
     ],
     "compat": "试用前请了解",
     "compatText": "本项目基于开源项目 xcertplay / DiPlay 深度重构与兼容，内置离线认证材料。同包名、同签名版本可覆盖升级；签名不同的上游或 Debug 版本可能需要重新安装，请先保存设置与诊断报告。老旧车机建议先使用 30 fps 并关闭 HEVC。",
