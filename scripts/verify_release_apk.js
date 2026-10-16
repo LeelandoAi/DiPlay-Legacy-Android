@@ -6,14 +6,15 @@ const root = process.cwd();
 const buildGradle = fs.readFileSync(path.join(root, 'mobile', 'build.gradle.kts'), 'utf8');
 const vname = buildGradle.match(/versionName\s*=\s*"([^"]+)"/)[1];
 const vcode = buildGradle.match(/versionCode\s*=\s*(\d+)/)[1];
-const headCommit = cp.execSync('git rev-parse HEAD', { encoding: 'utf8' }).trim();
+const targetArg = process.argv[2] || 'HEAD';
+const targetCommit = cp.execSync(`git rev-parse ${targetArg}`, { encoding: 'utf8' }).trim();
 
-console.log('==> Verifying Release APK vs Current Source');
+console.log('==> Verifying Release APK vs Source');
 console.log('    Target Version:', vname, `(code ${vcode})`);
-console.log('    Current HEAD:  ', headCommit);
+console.log('    Target Commit: ', `${targetArg} (${targetCommit})`);
 
-const apkName = `DiPlay-v${vname}-legacy-release.apk`;
-const apkPath = path.join(root, apkName);
+const apkName = process.argv[3] || `DiPlay-v${vname}-legacy-release.apk`;
+const apkPath = path.isAbsolute(apkName) ? apkName : path.join(root, apkName);
 
 if (!fs.existsSync(apkPath)) {
   console.error(`ERROR: Release APK not found at ${apkPath}`);
@@ -37,14 +38,14 @@ if (!revMatch) {
 const apkCommit = revMatch[1];
 console.log('    APK Commit:    ', apkCommit);
 
-if (apkCommit === headCommit) {
+if (apkCommit === targetCommit) {
   console.log('    Commit Check:   EXACT MATCH (100% synchronized)');
 } else {
-  const diff = cp.execSync(`git diff ${apkCommit} ${headCommit} -- mobile/ shared/ common/ home/`, { encoding: 'utf8' }).trim();
+  const diff = cp.execSync(`git diff ${apkCommit} ${targetCommit} -- mobile/ shared/ common/ home/`, { encoding: 'utf8' }).trim();
   if (diff.length === 0) {
-    console.log(`    Commit Check:   VALID (APK built from ${apkCommit.slice(0, 7)}, 0 code changes to HEAD ${headCommit.slice(0, 7)})`);
+    console.log(`    Commit Check:   VALID (APK built from ${apkCommit.slice(0, 7)}, 0 code changes to Target ${targetCommit.slice(0, 7)})`);
   } else {
-    console.error('    Commit Check:   FAILED! Code differences detected between APK and HEAD:');
+    console.error('    Commit Check:   FAILED! Code differences detected between APK and Target:');
     console.error(diff.slice(0, 1000));
     process.exit(1);
   }
