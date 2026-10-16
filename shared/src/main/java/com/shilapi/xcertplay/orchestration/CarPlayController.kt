@@ -1405,8 +1405,17 @@ class CarPlayController(
             // is the only data-capable Bluetooth, and without this call it
             // stays disabled and wireless can never reach it (P0-1).
             runCatching { hybridAdapter.enable() }
+            // Issue #157: on vendor stacks (e.g. YunOS) the framework and hybrid adapters
+            // may both report disabled while the user already entered the iPhone MAC
+            // manually. selectWirelessBluetoothDevice() consumes the manual address itself
+            // (getRemoteDevice needs no enabled adapter), so let it run in that case.
+            val manualPhoneAddress = config.wirelessBluetoothDeviceAddress
+            val hasManualPhoneAddress = !manualPhoneAddress.isNullOrBlank() &&
+                BluetoothAdapter.checkBluetoothAddress(manualPhoneAddress)
             val device = try {
-                if (adapter != null && (adapter.isEnabled || hybridAdapter.isEnabled())) {
+                if (adapter != null &&
+                    (adapter.isEnabled || hybridAdapter.isEnabled() || hasManualPhoneAddress)
+                ) {
                     selectWirelessBluetoothDevice(adapter)
                 } else {
                     null
