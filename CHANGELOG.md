@@ -1,3 +1,12 @@
+# DiPlay 0.2.73 — 2026-10-18
+
+- Legacy USB configuration fallback & reconnection fix: support graceful USB configuration fallback and robust descriptor parsing on legacy Android head units (e.g., Allwinner T3) when upgrading to v0.2.72 (#217).
+- Wireless Bluetooth RFCOMM connection stability: strengthen RFCOMM retry budget, link state tracking, and error recovery for Android 4.4.2 head units (#218).
+- Android 6.0 PackageInstaller crash fix: prioritize FileProvider `content://` URIs with granted read permissions on Android 6.0+ (API 23+) during update installation, eliminating "Package installer has stopped" crashes on Marshmallow OEM head units (#215).
+- Test execution heap & cache optimization: increase test worker heap to 2 GB to ensure stable execution of the extensive 1,000+ unit test suite without memory exhaustion or Kryo binary corruption.
+
+See [v0.2.73 release notes](docs/RELEASE-NOTES-0.2.73.md) for validation and device-testing limits.
+
 # DiPlay 0.2.72 — 2026-10-17
 
 - Navigation Opus audio & reverse camera black screen fix: fix silent turn-by-turn navigation on legacy head units and prevent black screen when switching back from reverse camera (#214).
