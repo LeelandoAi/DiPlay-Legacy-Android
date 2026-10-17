@@ -1,3 +1,17 @@
+# DiPlay 0.2.72 — 2026-10-17
+
+- Navigation Opus audio & reverse camera black screen fix: fix silent turn-by-turn navigation on legacy head units and prevent black screen when switching back from reverse camera (#214).
+- Wired connection deadlock & pairing timing fix: resolve UI freeze, channel starvation, and pairing trust race conditions during wired CarPlay negotiation (#211).
+- Android 4.2 / API 17 USB bulkTransfer compatibility: fallback to 4-parameter `bulkTransfer` on API 17 to prevent NoSuchMethodError during USB transport (#213).
+- AirPlay TCP snapshot preservation: preserve attached VPN service reference for NO_AIRPLAY_TCP watchdog diagnostics, preventing lost TCP states (#137).
+- Re-enumeration optimization: skip redundant re-enumeration requests when trusted iPhone already enumerates in CarPlay mode (#205, #211).
+- External USB Bluetooth adapter hardening: fix iAP2 service SDP queries, resolve link authentication & encryption timeout, and strengthen L2CAP frame handling.
+- T3 low-end head unit media & input fix: resolve screen touch freeze, hotspot setting misdirection, aftermarket steering wheel track switching, and audio sink fallback.
+- Turn off Wi-Fi before opening hotspot: prevent hardware conflict on single-chip Wi-Fi/AP head units (#172).
+- Dynamic AAC software decoder fallback: automatically fallback to software decoding when platform AAC hardware decoder output degrades (#170).
+
+See [v0.2.72 release notes](docs/RELEASE-NOTES-0.2.72.md) for validation and device-testing limits.
+
 # DiPlay 0.2.71 — 2026-10-17
 
 - External USB Bluetooth adapter diagnostics: log SDP iAP2 RFCOMM channel lookup results and ACL connection establishment/reuse events into user-exportable diagnostic logs (`UsbBtLog`) for field troubleshooting (#206).
