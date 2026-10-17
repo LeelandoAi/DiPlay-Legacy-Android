@@ -409,7 +409,7 @@ class Iap2LinkChannel private constructor(
     }
 
     companion object {
-        private const val WIRELESS_SYNC_FALLBACK_MILLIS = 150L
+        private const val WIRELESS_SYNC_FALLBACK_MILLIS = 800L
         private const val HANDSHAKE_PROGRESS_MILLIS = 10_000L
         private const val RECEIVE_CHUNK_BYTES = 8_192
         private const val RECEIVE_POLL_MILLIS = 100L

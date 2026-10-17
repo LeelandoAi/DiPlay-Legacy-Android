@@ -38,9 +38,13 @@ object IphoneCarPlayConfiguration {
 
     fun find(device: UsbDevice, connection: UsbDeviceConnection? = null): CarPlayUsbConfiguration? {
         val configurations = if (realSdkInt() >= Build.VERSION_CODES.LOLLIPOP) {
-            platformConfigurations(device)
+            val platform = platformConfigurations(device)
+            if (platform.any { usbMuxInterface(it) != null && hasCdcNcm(it) }) platform
+            else listOf(CarPlayUsbConfiguration(1, (0 until device.interfaceCount).map(device::getInterface)))
         } else if (connection != null) {
-            KitKatUsbDescriptors.read(connection)
+            val parsed = KitKatUsbDescriptors.read(connection)
+            if (parsed.any { usbMuxInterface(it) != null && hasCdcNcm(it) }) parsed
+            else listOf(CarPlayUsbConfiguration(1, (0 until device.interfaceCount).map(device::getInterface)))
         } else {
             listOf(CarPlayUsbConfiguration(1, (0 until device.interfaceCount).map(device::getInterface)))
         }

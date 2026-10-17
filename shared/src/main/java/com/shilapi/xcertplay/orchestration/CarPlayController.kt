@@ -1578,7 +1578,7 @@ class CarPlayController(
                 var controlResult: Iap2WirelessControlResult? = null
                 var lastBootstrapError: Throwable? = null
                 var attempt = 0
-                val maxAttempts = 2
+                val maxAttempts = 3
 
                 while (attempt < maxAttempts && !isStaleWirelessRun(generation)) {
                     attempt++
@@ -1596,6 +1596,16 @@ class CarPlayController(
                         bluetoothStream = currentStream
                         stream = currentStream
                         debugLog("wireless RFCOMM connected address=${device.address}")
+
+                        // Issue #218: GOC and serial-bridged Bluetooth modules on legacy head units
+                        // (e.g. Allwinner Astar Y3 / KitKat) need a brief settling period after RFCOMM
+                        // socket connect before transmitting data over the UART bridge; writing
+                        // immediately causes buffer overflow, packet collision, or peer reset.
+                        try {
+                            Thread.sleep(150L)
+                        } catch (_: InterruptedException) {
+                            if (isStaleWirelessRun(generation)) break
+                        }
 
                         val currentChannel = Iap2Session.openWireless(
                             currentStream,
@@ -1652,7 +1662,7 @@ class CarPlayController(
                         }
                         if (attempt < maxAttempts) {
                             try {
-                                Thread.sleep(1000L)
+                                Thread.sleep(1200L)
                             } catch (_: InterruptedException) {
                                 break
                             }

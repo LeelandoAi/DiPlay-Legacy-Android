@@ -107,10 +107,12 @@ class IphoneUsbHost(
                 val connection = usbManager.openDevice(device)
                 if (connection != null) {
                     try { IphoneCarPlayConfiguration.find(device, connection) } finally { connection.close() }
-                } else null
+                } else {
+                    IphoneCarPlayConfiguration.find(device, null)
+                }
             } catch (_: Throwable) {
-                null
-            }
+                runCatching { IphoneCarPlayConfiguration.find(device, null) }.getOrNull()
+            } ?: runCatching { IphoneCarPlayConfiguration.find(device, null) }.getOrNull()
             callback(configuration)
         }
     }
