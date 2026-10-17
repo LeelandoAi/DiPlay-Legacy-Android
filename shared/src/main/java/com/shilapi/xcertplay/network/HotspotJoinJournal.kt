@@ -53,6 +53,11 @@ internal class HotspotJoinJournal<C>(directory: File, private val firmware: Stri
             stream.write(bytes); stream.write(digest(bytes))
             syncFile(stream) // AtomicFile can suppress fsync failure; require a throwing sync first.
             file.finishWrite(stream)
+            val newFile = File(file.baseFile.path + ".new")
+            if (newFile.exists()) {
+                file.baseFile.delete()
+                newFile.renameTo(file.baseFile)
+            }
         } catch (error: Exception) { file.failWrite(stream); throw error }
         syncDirectory() // Persist the rename itself, not only the snapshot file contents.
         // Verification is mandatory even if an OEM AtomicFile implementation silently fails.

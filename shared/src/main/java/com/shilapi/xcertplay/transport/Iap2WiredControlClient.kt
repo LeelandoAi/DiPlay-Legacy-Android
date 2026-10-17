@@ -74,6 +74,7 @@ class Iap2WiredControlClient(
         var forwardedFrames = 0
         var carPlayStartSessions = 0
         var startSessionNanos = 0L
+        val loopStartNanos = System.nanoTime()
         /** Reports the "media alive" decision once per run so a quiet control channel cannot spam. */
         var keptLinkAfterSilence = false
         // Issue #84/#61: the live loop previously had no dead-link detection — once the
@@ -129,6 +130,23 @@ class Iap2WiredControlClient(
                             carPlayStartSessions,
                         )
                     }
+
+                    // Proactive fallback for wired reconnections:
+                    // When reconnecting over USB without a physical unplug, the iPhone often does not
+                    // re-send 0x4300 CarPlayAvailability because it assumes the session was already
+                    // announced. If 0x4300 has not arrived after a short grace period (2.5s), send
+                    // 0x4301 CarPlayStartSession proactively to trigger the AirPlay TCP connection.
+                    if (carPlayStartSessions == 0 &&
+                        (System.nanoTime() - loopStartNanos) >= PROACTIVE_START_SESSION_DELAY_MILLIS * NANOS_PER_MILLISECOND
+                    ) {
+                        onProgress("iap2 availability wait grace period elapsed (2.5s); proactively sending carplay-start-session (0x4301)")
+                        send(carPlayStartSession(endpoint), deadlineNanos)
+                        stage = Iap2WiredControlStage.CARPLAY_START_SENT
+                        carPlayStartSessions++
+                        if (startSessionNanos == 0L) startSessionNanos = System.nanoTime()
+                        onProgress("iap2 tx=0x4301 carplay-start-session")
+                    }
+
                     // Issue #84/#61: surface peer silence in the report, and stop spinning
                     // forever once the iPhone is quiet long after StartSession was sent.
                     silenceMonitor.diagnosticIfDue()?.let { onProgress(it) }
@@ -218,6 +236,7 @@ class Iap2WiredControlClient(
         private const val CARPLAY_AVAILABILITY = 0x4300
         private const val CARPLAY_START_SESSION = 0x4301
         private const val STARTUP_AVAILABILITY_TIMEOUT_MILLIS = 60_000L
+        private const val PROACTIVE_START_SESSION_DELAY_MILLIS = 2_500L
         private const val DEFAULT_TIMEOUT_MILLIS = 60_000L
         private const val MAX_TIMEOUT_MILLIS = 24 * 60 * 60 * 1_000L
         private const val MAX_RECV_TIMEOUT_MILLIS = 5 * 60 * 1_000L

@@ -1,7 +1,10 @@
 package com.shilapi.xcertplay.usbbt
 
+import android.content.Context
 import android.util.Log
+import com.shilapi.xcertplay.usbbt.HciProtocol.EVT_AUTHENTICATION_COMPLETE
 import com.shilapi.xcertplay.usbbt.HciProtocol.EVT_IO_CAPABILITY_REQUEST
+import com.shilapi.xcertplay.usbbt.HciProtocol.EVT_IO_CAPABILITY_RESPONSE
 import com.shilapi.xcertplay.usbbt.HciProtocol.EVT_LINK_KEY_NOTIFICATION
 import com.shilapi.xcertplay.usbbt.HciProtocol.EVT_LINK_KEY_REQUEST
 import com.shilapi.xcertplay.usbbt.HciProtocol.EVT_PIN_CODE_REQUEST
@@ -42,6 +45,7 @@ class UsbBtPairingAgent(
     private val hci: UsbBtHci,
     private val linkKeys: LinkKeyStore,
     private val uiCallback: PairingUiCallback? = null,
+    private val context: Context? = null,
 ) {
 
     companion object {
@@ -85,14 +89,14 @@ class UsbBtPairingAgent(
         executor = java.util.concurrent.Executors.newSingleThreadExecutor { runnable ->
             Thread(runnable, "UsbBtPairing").apply { isDaemon = true }
         }
-        Log.i(TAG, "pairing agent started")
+        UsbBtLog.log(context, TAG, "pairing agent started")
     }
 
     fun stop() {
         if (!running.compareAndSet(false, true)) return
         executor?.shutdownNow()
         executor = null
-        Log.i(TAG, "pairing agent stopped")
+        UsbBtLog.log(context, TAG, "pairing agent stopped")
     }
 
     /**
@@ -103,14 +107,16 @@ class UsbBtPairingAgent(
         if (!running.get()) return
         when (event.code) {
             EVT_IO_CAPABILITY_REQUEST,
+            EVT_IO_CAPABILITY_RESPONSE,
             EVT_USER_CONFIRMATION_REQUEST,
             EVT_LINK_KEY_NOTIFICATION,
             EVT_LINK_KEY_REQUEST,
             EVT_PIN_CODE_REQUEST,
-            EVT_SIMPLE_PAIRING_COMPLETE -> {
+            EVT_SIMPLE_PAIRING_COMPLETE,
+            EVT_AUTHENTICATION_COMPLETE -> {
                 executor?.execute {
                     runCatching { handleEvent(event) }
-                        .onFailure { Log.w(TAG, "pairing event handler failed", it) }
+                        .onFailure { UsbBtLog.warn(context, TAG, "pairing event handler failed", it) }
                 }
             }
         }
@@ -119,11 +125,13 @@ class UsbBtPairingAgent(
     private fun handleEvent(event: HciProtocol.HciEvent) {
         when (event.code) {
             EVT_IO_CAPABILITY_REQUEST -> onIoCapabilityRequest(event)
+            EVT_IO_CAPABILITY_RESPONSE -> onIoCapabilityResponse(event)
             EVT_USER_CONFIRMATION_REQUEST -> onUserConfirmationRequest(event)
             EVT_LINK_KEY_NOTIFICATION -> onLinkKeyNotification(event)
             EVT_LINK_KEY_REQUEST -> onLinkKeyRequest(event)
             EVT_PIN_CODE_REQUEST -> onPinCodeRequest(event)
             EVT_SIMPLE_PAIRING_COMPLETE -> onSimplePairingComplete(event)
+            EVT_AUTHENTICATION_COMPLETE -> onAuthenticationComplete(event)
             else -> { /* not pairing-related; ignore */ }
         }
     }
@@ -149,10 +157,17 @@ class UsbBtPairingAgent(
             byteArrayOf(ioCap.toByte(), 0x00, 0x04)
         when (val r = hci.sendCommand(OP_IO_CAPABILITY_REQUEST_REPLY, reply)) {
             is UsbBtHci.HciResult.Ok ->
-                Log.i(TAG, "IO capability replied ($ioCap) for $bdAddr")
+                UsbBtLog.log(context, TAG, "IO capability replied ($ioCap) for $bdAddr")
             is UsbBtHci.HciResult.Failed ->
-                Log.w(TAG, "IO capability reply failed for $bdAddr: ${r.reason}")
+                UsbBtLog.warn(context, TAG, "IO capability reply failed for $bdAddr: ${r.reason}")
         }
+    }
+
+    private fun onIoCapabilityResponse(event: HciProtocol.HciEvent) {
+        val bdAddr = bdAddrFrom(event) ?: return
+        val ioCap = if (event.params.size >= 7) event.params[6].toInt() and 0xFF else -1
+        val authReq = if (event.params.size >= 9) event.params[8].toInt() and 0xFF else -1
+        UsbBtLog.log(context, TAG, "Peer IO capability received from $bdAddr: ioCap=$ioCap authReq=$authReq")
     }
 
     /**
@@ -175,7 +190,7 @@ class UsbBtPairingAgent(
         val latch = CountDownLatch(1)
         var accepted = true // fallback on UI timeout: auto-confirm (Just Works)
         var decided = false
-        Log.i(TAG, "Numeric Comparison for $bdAddr: %06d".format(sixDigits))
+        UsbBtLog.log(context, TAG, "Numeric Comparison for $bdAddr: %06d".format(sixDigits))
         runCatching {
             callback.onNumericComparison(bdAddr, sixDigits) { ok ->
                 synchronized(latch) {
@@ -186,7 +201,7 @@ class UsbBtPairingAgent(
                     }
                 }
             }
-        }.onFailure { Log.w(TAG, "pairing UI callback failed; auto-confirming", it) }
+        }.onFailure { UsbBtLog.warn(context, TAG, "pairing UI callback failed; auto-confirming", it) }
         latch.await(UI_DECISION_TIMEOUT_MS, TimeUnit.MILLISECONDS)
         val addrBytes = event.params.copyOfRange(0, 6)
         val opcode = if (accepted) {
@@ -196,9 +211,9 @@ class UsbBtPairingAgent(
         }
         when (val r = hci.sendCommand(opcode, addrBytes)) {
             is UsbBtHci.HciResult.Ok ->
-                Log.i(TAG, "pairing ${if (accepted) "confirmed" else "rejected"} for $bdAddr")
+                UsbBtLog.log(context, TAG, "pairing ${if (accepted) "confirmed" else "rejected"} for $bdAddr")
             is UsbBtHci.HciResult.Failed ->
-                Log.w(TAG, "confirmation reply failed for $bdAddr: ${r.reason}")
+                UsbBtLog.warn(context, TAG, "confirmation reply failed for $bdAddr: ${r.reason}")
         }
     }
 
@@ -207,9 +222,9 @@ class UsbBtPairingAgent(
         val reply = event.params.copyOfRange(0, 6)
         when (val r = hci.sendCommand(OP_USER_CONFIRMATION_REQUEST_REPLY, reply)) {
             is UsbBtHci.HciResult.Ok ->
-                Log.i(TAG, "auto-confirmed pairing for $bdAddr (Just Works)")
+                UsbBtLog.log(context, TAG, "auto-confirmed pairing for $bdAddr (Just Works)")
             is UsbBtHci.HciResult.Failed ->
-                Log.w(TAG, "auto-confirm failed for $bdAddr: ${r.reason}")
+                UsbBtLog.warn(context, TAG, "auto-confirm failed for $bdAddr: ${r.reason}")
         }
     }
 
@@ -219,12 +234,13 @@ class UsbBtPairingAgent(
      */
     private fun onLinkKeyNotification(event: HciProtocol.HciEvent) {
         if (event.params.size < 23) {
-            Log.w(TAG, "malformed Link_Key_Notification (${event.params.size} bytes)")
+            UsbBtLog.warn(context, TAG, "malformed Link_Key_Notification (${event.params.size} bytes)")
             return
         }
         val bdAddr = bdAddrFrom(event) ?: return
         val key = event.params.copyOfRange(6, 22)
         linkKeys.store(bdAddr, key)
+        UsbBtLog.log(context, TAG, "Link key stored for $bdAddr (size=${key.size})")
     }
 
     /**
@@ -241,17 +257,17 @@ class UsbBtPairingAgent(
             val reply = encodeLinkKeyReply(rawAddr, key)
             when (val r = hci.sendCommand(OP_LINK_KEY_REQUEST_REPLY, reply)) {
                 is UsbBtHci.HciResult.Ok ->
-                    Log.i(TAG, "replied stored link key for $bdAddr")
+                    UsbBtLog.log(context, TAG, "replied stored link key for $bdAddr")
                 is UsbBtHci.HciResult.Failed ->
-                    Log.w(TAG, "link key reply failed for $bdAddr: ${r.reason}")
+                    UsbBtLog.warn(context, TAG, "link key reply failed for $bdAddr: ${r.reason}")
             }
         } else {
             val reply = encodeLinkKeyNegativeReply(rawAddr)
             when (val r = hci.sendCommand(OP_LINK_KEY_REQUEST_NEGATIVE_REPLY, reply)) {
                 is UsbBtHci.HciResult.Ok ->
-                    Log.i(TAG, "replied negative link key for $bdAddr (initiating pairing)")
+                    UsbBtLog.log(context, TAG, "replied negative link key for $bdAddr (initiating pairing)")
                 is UsbBtHci.HciResult.Failed ->
-                    Log.w(TAG, "negative link key reply failed for $bdAddr: ${r.reason}")
+                    UsbBtLog.warn(context, TAG, "negative link key reply failed for $bdAddr: ${r.reason}")
             }
         }
     }
@@ -267,9 +283,9 @@ class UsbBtPairingAgent(
         val reply = encodePinCodeNegativeReply(rawAddr)
         when (val r = hci.sendCommand(OP_PIN_CODE_REQUEST_NEGATIVE_REPLY, reply)) {
             is UsbBtHci.HciResult.Ok ->
-                Log.i(TAG, "replied negative pin code for $bdAddr")
+                UsbBtLog.log(context, TAG, "replied negative pin code for $bdAddr")
             is UsbBtHci.HciResult.Failed ->
-                Log.w(TAG, "negative pin code reply failed for $bdAddr: ${r.reason}")
+                UsbBtLog.warn(context, TAG, "negative pin code reply failed for $bdAddr: ${r.reason}")
         }
     }
 
@@ -277,10 +293,17 @@ class UsbBtPairingAgent(
         if (event.params.size < 8) return
         val status = event.params[0].toInt() and 0xFF
         val bdAddr = bdAddrFrom(event) ?: "?"
-        Log.i(
-            TAG,
-            if (status == 0) "pairing complete with $bdAddr"
-            else "pairing FAILED with $bdAddr status=0x${status.toString(16)}",
-        )
+        val msg = if (status == 0) "pairing complete with $bdAddr"
+        else "pairing FAILED with $bdAddr status=0x${status.toString(16)}"
+        UsbBtLog.log(context, TAG, msg)
+    }
+
+    private fun onAuthenticationComplete(event: HciProtocol.HciEvent) {
+        if (event.params.size < 3) return
+        val status = event.params[0].toInt() and 0xFF
+        val handle = (event.params[1].toInt() and 0xFF) or ((event.params[2].toInt() and 0xFF) shl 8)
+        val msg = if (status == 0) "authentication complete for handle=0x${handle.toString(16)}"
+        else "authentication FAILED for handle=0x${handle.toString(16)} status=0x${status.toString(16)}"
+        UsbBtLog.log(context, TAG, msg)
     }
 }

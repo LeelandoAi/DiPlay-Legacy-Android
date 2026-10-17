@@ -21,6 +21,7 @@ import com.shilapi.xcertplay.usbbt.HciProtocol.OP_WRITE_EXTENDED_INQUIRY_RESPONS
 import com.shilapi.xcertplay.usbbt.HciProtocol.OP_WRITE_INQUIRY_MODE
 import com.shilapi.xcertplay.usbbt.HciProtocol.OP_WRITE_INQUIRY_SCAN_TYPE
 import com.shilapi.xcertplay.usbbt.HciProtocol.OP_WRITE_LOCAL_NAME
+import com.shilapi.xcertplay.usbbt.HciProtocol.OP_WRITE_AUTHENTICATION_ENABLE
 import com.shilapi.xcertplay.usbbt.HciProtocol.OP_WRITE_PAGE_SCAN_TYPE
 import com.shilapi.xcertplay.usbbt.HciProtocol.OP_WRITE_SCAN_ENABLE
 import com.shilapi.xcertplay.usbbt.HciProtocol.OP_WRITE_SIMPLE_PAIRING_MODE
@@ -329,6 +330,17 @@ class UsbBtHci private constructor(
         )
         if (ssp is HciResult.Failed) {
             step("Write_Simple_Pairing_Mode failed (non-fatal): ${ssp.reason}")
+        }
+
+        // 7b. Write_Authentication_Enable (enable authentication for incoming bonding)
+        val authEnable = timed(
+            "Write_Authentication_Enable",
+            UsbBtTiming.WRITE_POLICY,
+            OP_WRITE_AUTHENTICATION_ENABLE,
+            byteArrayOf(0x01),
+        )
+        if (authEnable is HciResult.Failed) {
+            step("Write_Authentication_Enable failed (non-fatal): ${authEnable.reason}")
         }
 
         // 8. Write_Inquiry_Mode (2 = Extended Inquiry Result or RSSI)

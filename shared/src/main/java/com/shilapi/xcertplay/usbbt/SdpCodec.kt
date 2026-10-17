@@ -34,10 +34,13 @@ object SdpCodec {
     const val UUID_L2CAP = 0x0100
     const val UUID_PUBLIC_BROWSE_ROOT = 0x1002
     const val UUID_SERIAL_PORT = 0x1101
+    const val UUID_HANDSFREE = 0x111E
+    const val UUID_GENERIC_AUDIO = 0x1203
     const val UUID_PNP_INFORMATION = 0x1200
 
     const val HANDLE_IAP2 = 0x00010000L // 65536
     const val HANDLE_DEVICE_ID = 0x00010001L // 65537
+    const val HANDLE_HANDSFREE = 0x00010002L // 65538
 
     private const val BASE_UUID_LSB = -9223371485494954757L // 0x8000_0080_5F9B_34FBL
 
@@ -85,11 +88,53 @@ object SdpCodec {
     }
 
     /**
+     * Creates an SDP record for Handsfree Audio (HFP):
+     * - ServiceClassIDList: Handsfree (0x111E), GenericAudio (0x1203)
+     * - ProtocolDescriptorList: L2CAP + RFCOMM (channel 2)
+     * - BrowseGroupList: PublicBrowseRoot
+     * - ProfileDescriptorList: Handsfree Profile (v1.7)
+     * - ServiceName: "Handsfree Audio"
+     */
+    fun handsfreeRecord(
+        rfcommChannel: Int = 2,
+        serviceName: String = "Handsfree Audio",
+    ): SdpRecord {
+        return SdpRecord(
+            handle = HANDLE_HANDSFREE,
+            attributes = mapOf(
+                ATTR_SERVICE_CLASS_ID_LIST to DataElement.Sequence(
+                    DataElement.Uuid.of16(UUID_HANDSFREE),
+                    DataElement.Uuid.of16(UUID_GENERIC_AUDIO),
+                ),
+                ATTR_PROTOCOL_DESCRIPTOR_LIST to DataElement.Sequence(
+                    DataElement.Sequence(DataElement.Uuid.of16(UUID_L2CAP)),
+                    DataElement.Sequence(
+                        DataElement.Uuid.of16(UUID_RFCOMM),
+                        DataElement.UInt(1, rfcommChannel.toLong()),
+                    )
+                ),
+                ATTR_BROWSE_GROUP_LIST to DataElement.Sequence(
+                    DataElement.Uuid.of16(UUID_PUBLIC_BROWSE_ROOT),
+                ),
+                ATTR_PROFILE_DESCRIPTOR_LIST to DataElement.Sequence(
+                    DataElement.Sequence(
+                        DataElement.Uuid.of16(UUID_HANDSFREE),
+                        DataElement.UInt(2, 0x0107L),
+                    )
+                ),
+                ATTR_SERVICE_NAME to DataElement.Text(serviceName),
+                0x0311 to DataElement.UInt(2, 0x003FL), // Supported features
+            )
+        )
+    }
+
+    /**
      * Builds standard records list for a given [UsbBtIdentity].
      */
     fun defaultRecords(identity: UsbBtIdentity): List<SdpRecord> {
         val list = mutableListOf<SdpRecord>()
         list.add(iap2Record(identity.iap2RfcommChannel))
+        list.add(handsfreeRecord())
         identity.deviceId?.let { dev ->
             list.add(
                 SdpRecord(

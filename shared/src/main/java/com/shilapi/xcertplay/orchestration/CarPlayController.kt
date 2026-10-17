@@ -2219,6 +2219,14 @@ class CarPlayController(
                 availabilityPollGeneration.incrementAndGet()
                 requestIphonePermission(device)
             }
+            Phase.WIRELESS, Phase.IDLE -> {
+                debugLog("wired iPhone attached while in $phase; transport=${config.transport}")
+                if (config.transport == CarPlayTransport.WIRED) {
+                    phase = Phase.IPHONE
+                    availabilityPollGeneration.incrementAndGet()
+                    requestIphonePermission(device)
+                }
+            }
             else -> Unit
         }
     }

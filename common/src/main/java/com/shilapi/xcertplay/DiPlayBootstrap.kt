@@ -68,12 +68,14 @@ internal object DiPlayBootstrap {
         if (!target.isDirectory) return false
         return AUTH_FILES.all { name ->
             val file = File(target, name)
-            if (!file.isFile) return false
+            if (!file.isFile || file.length() == 0L) return false
             try {
                 context.assets.open("offline-mfi/$name").use { assetStream ->
+                    val available = assetStream.available()
+                    if (available > 0 && file.length() != available.toLong()) return false
                     file.inputStream().use { fileStream ->
-                        val b1 = ByteArray(1024)
-                        val b2 = ByteArray(1024)
+                        val b1 = ByteArray(4096)
+                        val b2 = ByteArray(4096)
                         while (true) {
                             val r1 = assetStream.read(b1)
                             val r2 = fileStream.read(b2)

@@ -287,7 +287,9 @@ class DiPlayActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        if (savedInstanceState == null) LegacyConnectionProbe.log(applicationContext)
+        if (savedInstanceState == null) {
+            Thread({ LegacyConnectionProbe.log(applicationContext) }, "DiPlayProbeLog").apply { isDaemon = true }.start()
+        }
         // Back on the home page finishes this activity while the session runs on, so the icon lands here.
         if (savedInstanceState == null && isLauncherIntent(intent) && CarPlayBackgroundSession.hasSession()) {
             openProjection(); finish(); return

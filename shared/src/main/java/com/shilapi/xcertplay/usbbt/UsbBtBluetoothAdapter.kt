@@ -174,7 +174,7 @@ class UsbBtBluetoothAdapter(
                     dongleLabel = dongle.vendorLabel
                     initSteps = init.value.steps
                     hci = opened
-                    pairingAgent = UsbBtPairingAgent(opened, linkKeys, pairingUiCallback).also { it.start() }
+                    pairingAgent = UsbBtPairingAgent(opened, linkKeys, pairingUiCallback, appContext).also { it.start() }
                     startPump(opened)
                     awaitingPermission.set(false)
                     val enableMsg = "USB Bluetooth enabled: bdAddr=$localBdAddr vendor=${dongle.vendorLabel} advertising=DiPlay-${localBdAddr?.takeLast(5)?.replace(":", "") ?: "BT"}"
@@ -498,11 +498,15 @@ class UsbBtBluetoothAdapter(
                         EVT_CONNECTION_REQUEST -> {
                             val req = parseConnectionRequest(event)
                             if (req != null) {
-                                Log.i(TAG, "incoming connection request from ${req.bdAddr} linkType=${req.linkType}")
+                                val msg = "incoming connection request from ${req.bdAddr} linkType=${req.linkType} CoD=0x${req.classOfDevice.toString(16)}"
+                                Log.i(TAG, msg)
+                                UsbBtLog.log(appContext, TAG, msg)
                                 if (req.linkType == 1) { // ACL
                                     val acceptCmd = encodeAcceptConnection(req.rawAddr)
                                     val res = h.sendCommand(OP_ACCEPT_CONNECTION_REQUEST, acceptCmd)
-                                    Log.i(TAG, "accept connection result for ${req.bdAddr}: $res")
+                                    val resMsg = "accept connection result for ${req.bdAddr}: $res"
+                                    Log.i(TAG, resMsg)
+                                    UsbBtLog.log(appContext, TAG, resMsg)
                                 }
                             }
                         }
@@ -515,9 +519,13 @@ class UsbBtBluetoothAdapter(
                                     connectedOrder.remove(key)
                                     connectedOrder.addLast(key)
                                     getOrCreateL2cap(cc.handle, h)
-                                    Log.i(TAG, "ACL up: $key handle=0x${cc.handle.toString(16)}")
+                                    val msg = "ACL up: $key handle=0x${cc.handle.toString(16)}"
+                                    Log.i(TAG, msg)
+                                    UsbBtLog.log(appContext, TAG, msg)
                                 } else {
-                                    Log.w(TAG, "ACL connection failed: $key status=0x${cc.status.toString(16)}")
+                                    val msg = "ACL connection failed: $key status=0x${cc.status.toString(16)}"
+                                    Log.w(TAG, msg)
+                                    UsbBtLog.warn(appContext, TAG, msg)
                                 }
                                 pendingAcl[key]?.let { pending ->
                                     pending.handle = cc.handle
@@ -529,6 +537,9 @@ class UsbBtBluetoothAdapter(
                         EVT_DISCONNECTION_COMPLETE -> {
                             val dc = parseDisconnectionComplete(event)
                             if (dc != null && dc.status == 0) {
+                                val msg = "ACL disconnected: handle=0x${dc.handle.toString(16)} reason=0x${dc.reason.toString(16)}"
+                                Log.i(TAG, msg)
+                                UsbBtLog.log(appContext, TAG, msg)
                                 onPeerDisconnected(dc.handle)
                             }
                         }
@@ -558,12 +569,18 @@ class UsbBtBluetoothAdapter(
             usbReceivers = null
         }
         awaitingPermission.set(false)
-        synchronized(lock) {
-            hci?.let { runCatching { it.close() } }
+        val closingHci = synchronized(lock) {
+            val toClose = hci
             hci = null
             activeDevice = null
             localBdAddr = null
             initSteps = emptyList()
+            toClose
+        }
+        if (closingHci != null) {
+            Thread({
+                runCatching { closingHci.close() }
+            }, "UsbBtHciClose").apply { isDaemon = true }.start()
         }
         aclHandleByAddr.keys.toList().forEach { addr ->
             aclHandleByAddr.remove(addr)?.let { handle ->
