@@ -23,7 +23,7 @@ internal object DiPlayApkInstaller {
 
     /** A malformed SDK_INT on an old head unit must not select a legacy file URI on Android 7+. */
     internal fun supportsFileInstall(sdk: Int, release: String): Boolean =
-        sdk in 17..23
+        sdk in 17..22
 
     internal fun isLegacyInstall(sdk: Int, release: String): Boolean =
         supportsFileInstall(sdk, release) ||
@@ -37,7 +37,7 @@ internal object DiPlayApkInstaller {
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         },
         Intent(Intent.ACTION_INSTALL_PACKAGE).apply {
-            data = uri
+            setDataAndType(uri, APK_MIME)
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         },
@@ -164,17 +164,20 @@ internal object DiPlayApkInstaller {
         } catch (error: Exception) {
             Log.w(TAG, "FileProvider update URI unavailable", error)
         }
-        // Android 4.x/5.x PackageInstaller requires file:// URIs, not FileProvider content://.
+        val legacyFiles = linkedSetOf<File>().apply {
+            if (publicCopy?.isFile == true) add(publicCopy)
+            if (verifiedApk.isFile) add(verifiedApk)
+        }
+        val legacyIntents = legacyFiles.flatMap { file ->
+            makeWorldReadable(file)
+            fileIntents(file)
+        }
         if (isLegacyInstall(Build.VERSION.SDK_INT, Build.VERSION.RELEASE.orEmpty())) {
-            val legacyFiles = linkedSetOf<File>().apply {
-                if (publicCopy?.isFile == true) add(publicCopy)
-                if (verifiedApk.isFile) add(verifiedApk)
-            }
-            val legacyIntents = legacyFiles.flatMap { file ->
-                makeWorldReadable(file)
-                fileIntents(file)
-            }
+            // Android 4.x/5.x PackageInstaller requires file:// URIs, not FileProvider content://.
             intents.addAll(0, legacyIntents)
+        } else {
+            // Android 6+ prefers FileProvider content:// URIs; legacy file:// is fallback.
+            intents.addAll(legacyIntents)
         }
         var failure: Exception? = null
         for (intent in intents) {
