@@ -952,6 +952,11 @@ class CarPlayHostActivity : ComponentActivity() {
         darkMode = nightModeController.night
         if (activeAirPlaySession != null) {
             syncAirPlayDarkMode(ThemeModeDiagnostics.Source.RESUME)
+            val fallbackSurface = fallbackVideoView?.holder?.surface
+            if (fallbackSurface != null && fallbackSurface.isValid) {
+                videoSurfaceOwner.replace(fallbackSurface, releaseOnDetach = false)
+                attachSurface(fallbackSurface)
+            }
             sink?.refreshPicture(SCREEN_TYPE_MAIN)
         }
         if (!menuOpen) {
@@ -3848,7 +3853,7 @@ class CarPlayHostActivity : ComponentActivity() {
             hevc = hevcEnabled,
             microphone = microphoneAvailable,
             microphoneOpus = com.shilapi.xcertplay.media.OpusEncoderSupport.isAvailable(),
-            opusAudioOutput = true,
+            opusAudioOutput = com.shilapi.xcertplay.media.OpusDecoderSupport.isAvailable(),
             manufacturer = normalizedManufacturer(),
             model = normalizedModel(),
             oemLabel = oemLabel,
