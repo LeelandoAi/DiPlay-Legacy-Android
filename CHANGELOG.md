@@ -1,3 +1,9 @@
+# DiPlay 0.2.71 — 2026-10-17
+
+- External USB Bluetooth adapter diagnostics: log SDP iAP2 RFCOMM channel lookup results and ACL connection establishment/reuse events into user-exportable diagnostic logs (`UsbBtLog`) for field troubleshooting (#206).
+
+See [v0.2.71 release notes](docs/RELEASE-NOTES-0.2.71.md) for validation and device-testing limits.
+
 # DiPlay 0.2.70 — 2026-10-17
 
 - Fast cold start: add fast-path asset matching in bootstrap, skipping redundant extraction and multiple BouncyCastle cryptographic validations on UI thread (cold start reduced from 10-15s to <0.5s).

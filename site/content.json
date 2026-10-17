@@ -3,7 +3,7 @@
     "name": "English",
     "dir": "ltr",
     "tag": "Legacy Android compatibility edition (Android 4.2+)",
-    "badge": "v0.2.69 RELEASE",
+    "badge": "v0.2.71 RELEASE",
     "title": "Your iPhone.\nCarPlay for legacy Android head units.",
     "intro": "DiPlay Legacy brings wired and wireless CarPlay to older Android head units (Android 4.2 / API 17+), with native multi-architecture support (ARMv7, x86, ARM64).",
     "download": "Download APK",
@@ -25,13 +25,13 @@
     ],
     "adb": "Installation & connection help",
     "bssid": "ADB is not required for everyday use. APK installation options depend on the car. No manual MAC address entry.",
-    "whats": "New in v0.2.70",
+    "whats": "New in v0.2.71",
     "features": [
+      "External USB Bluetooth diagnostics: log SDP iAP2 RFCOMM channel queries and ACL link creation/reuse into user-exportable diagnostic logs for field troubleshooting (#206).",
       "Fast cold start: add fast-path asset matching in bootstrap, skipping redundant extraction and multiple BouncyCastle crypto parses on UI thread (cold start reduced from 10-15s to <0.5s).",
       "External USB Bluetooth adapter pairing & hotplug: support EVT_LINK_KEY_REQUEST and EVT_PIN_CODE_REQUEST negative replies for smooth SSP pairing fallback; preserve USB receivers during dongle disconnect; broadcast DiPlay name on adapter init.",
       "Fix wired freeze & watchdog reboot: eliminate unbounded spin loop in IphoneUsbHost.readSynchronously with strict deadline & open checks; resolve LwipNcmBridge.close interface release race with RX thread.",
-      "Tolerant mDNS query parsing: resolve iPhone stuck in 'Connecting to CarPlay' by parsing actual arrived UDP payload length, tolerating NCM tail truncation (#199, #204).",
-      "Direct hotspot settings navigation on legacy ROMs: resolve com.android.settings.TetherSettings and WifiApSettings so Android 4.2 / 4.4 head units jump directly to portable hotspot settings instead of Wi-Fi list (#200)."
+      "Tolerant mDNS query parsing: resolve iPhone stuck in 'Connecting to CarPlay' by parsing actual arrived UDP payload length, tolerating NCM tail truncation (#199, #204)."
     ],
     "compat": "Before you try it",
     "compatText": "Refactored and maintained for legacy head units. Install over an existing version only when the package and signing certificate match. Upstream or Debug-signed versions may require reinstalling; save your settings and reports first.",
@@ -242,7 +242,7 @@
     "name": "简体中文",
     "dir": "ltr",
     "tag": "深度兼容老款车机版本 (Android 4.2+)",
-    "badge": "v0.2.69 发布版",
+    "badge": "v0.2.71 发布版",
     "title": "你的 iPhone。\n老款安卓车机的 CarPlay 方案。",
     "intro": "DiPlay Legacy 专为老款 Android 车机（最低支持 Android 4.2 / API 17）深度优化，提供有线与无线 CarPlay 互联体验，支持 ARMv7、x86、ARM64 等多种硬件芯片架构。",
     "download": "下载 APK",
@@ -264,13 +264,13 @@
     ],
     "adb": "安装与连接指南",
     "bssid": "日常使用不需要 ADB。APK 安装方式取决于车机。无需手动输入 MAC 地址。",
-    "whats": "v0.2.70 更新亮点",
+    "whats": "v0.2.71 更新亮点",
     "features": [
+      "外置 USB 蓝牙建链诊断增强：将 SDP iAP2 RFCOMM 服务查询结果及 ACL 连接建立与复用事件记录至用户可导出的诊断日志，便于现场快速排查配对后无响应问题（#206）。",
       "冷启动时间大幅削减（10~15秒降至 <0.5秒）：离线凭据校验增加快速路径，跳过重复解包及 3 次主线程 BouncyCastle 验签，消除冷启动卡顿。",
       "外置 USB 蓝牙适配器与配对完善：支持 Link Key 与 PIN 码负响应，手机配对平滑回退至 SSP；优化热插拔广播监听，适配器上电立显 DiPlay 名称。",
       "彻底解决有线连接卡死与整机看门狗重启：修复 IphoneUsbHost 同步读取死循环 100% CPU 占用；修复 LwipNcmBridge USB 接口释放时序避免内核死锁。",
-      "兼容尾部截断的 mDNS 查询包：采用实际到达的有效 UDP 负载长度解析，消除因 NCM 填充截断导致的查询丢弃，解决有线卡在“正在连接 CarPlay”（#199, #204）。",
-      "老旧 ROM 热点设置一键直达：补充旧版 AOSP 的 TetherSettings 与 WifiApSettings 候选，解决 Android 4.2/4.4 车机点击“打开热点”误跳 Wi-Fi 列表（#200）。"
+      "兼容尾部截断的 mDNS 查询包：采用实际到达的有效 UDP 负载长度解析，消除因 NCM 填充截断导致的查询丢弃，解决有线卡在“正在连接 CarPlay”（#199, #204）。"
     ],
     "compat": "试用前请了解",
     "compatText": "本项目基于开源项目 xcertplay / DiPlay 深度重构与兼容，内置离线认证材料。同包名、同签名版本可覆盖升级；签名不同的上游或 Debug 版本可能需要重新安装，请先保存设置与诊断报告。老旧车机建议先使用 30 fps 并关闭 HEVC。",
