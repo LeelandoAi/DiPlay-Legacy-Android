@@ -96,57 +96,66 @@ class HybridBluetoothAdapter(
     override fun openRfcommStream(deviceAddress: String, uuid: String): BlockingDuplexByteStream {
         // Priority: USB dongle -> Android -> HSAE.
         //
-        // The dongle is tried FIRST because it is the only stack guaranteed
-        // to carry a data channel. HSAE on T3-class head units accepts an
-        // RFCOMM connection but never delivers data (the #146 black hole):
-        // it returns a stream that never produces bytes instead of throwing,
-        // so a HSAE-first order would hang the wireless handshake for 90s
-        // and never fall back to the dongle (P0-2). Trying the dongle first
-        // is safe: if it fails (throws), we fall through to Android/HSAE.
-        //
-        // Issue #200: when a stack was supported but every open failed, the old
-        // "no Bluetooth stack available" message hid the real cause (e.g. the
-        // ROM refusing third-party RFCOMM sockets). Report the last underlying
-        // error instead; keep the old message only when no stack was supported.
+        // However, if the target device is bonded to Android native Bluetooth
+        // and NOT bonded to the USB dongle, trying the dongle first would block for
         var lastError: Throwable? = null
         var tried = false
         val dongle = usbDongle
-        if (dongle != null && dongle.isSupported() && dongle.isEnabled()) {
+        val dongleActive = dongle != null && dongle.isSupported() && dongle.isEnabled()
+        val pairedOnDongle = dongleActive && dongle!!.getPairedDevices().any {
+            it.address.equals(deviceAddress, ignoreCase = true)
+        }
+        val pairedOnAndroid = android.isSupported() && android.getPairedDevices().any {
+            it.address.equals(deviceAddress, ignoreCase = true)
+        }
+        val preferAndroidOverDongle = pairedOnAndroid && !pairedOnDongle
+
+        fun tryDongle(): BlockingDuplexByteStream? {
+            if (!dongleActive) return null
             tried = true
             com.shilapi.xcertplay.usbbt.UsbBtLog.log(null, TAG, "openRfcommStream: trying USB dongle stack for $deviceAddress")
-            val result = runCatching {
-                dongle.openRfcommStream(deviceAddress, uuid)
-            }
+            val result = runCatching { dongle!!.openRfcommStream(deviceAddress, uuid) }
             val stream = result.getOrNull()
             if (stream != null) {
                 com.shilapi.xcertplay.usbbt.UsbBtLog.log(null, TAG, "openRfcommStream: USB dongle stream connected")
                 return stream
             }
             lastError = result.exceptionOrNull()
-            com.shilapi.xcertplay.usbbt.UsbBtLog.warn(null, TAG, "USB dongle RFCOMM stream failed, trying Android", lastError)
+            com.shilapi.xcertplay.usbbt.UsbBtLog.warn(null, TAG, "USB dongle RFCOMM stream failed", lastError)
+            return null
         }
-        if (android.isSupported()) {
+
+        fun tryAndroid(): BlockingDuplexByteStream? {
+            if (!android.isSupported()) return null
             tried = true
             com.shilapi.xcertplay.usbbt.UsbBtLog.log(null, TAG, "openRfcommStream: trying Android Bluetooth stack for $deviceAddress")
-            val result = runCatching {
-                android.openRfcommStream(deviceAddress, uuid)
-            }
+            val result = runCatching { android.openRfcommStream(deviceAddress, uuid) }
             val stream = result.getOrNull()
             if (stream != null) {
                 com.shilapi.xcertplay.usbbt.UsbBtLog.log(null, TAG, "openRfcommStream: Android Bluetooth stream connected")
                 return stream
             }
             lastError = result.exceptionOrNull()
-            com.shilapi.xcertplay.usbbt.UsbBtLog.warn(null, TAG, "Android RFCOMM stream failed, trying HSAE", lastError)
+            com.shilapi.xcertplay.usbbt.UsbBtLog.warn(null, TAG, "Android RFCOMM stream failed", lastError)
+            return null
+        }
+
+        if (preferAndroidOverDongle) {
+            tryAndroid()?.let { return it }
+            tryDongle()?.let { return it }
+        } else {
+            tryDongle()?.let { return it }
+            tryAndroid()?.let { return it }
         }
         if (hsae.isSupported()) {
             com.shilapi.xcertplay.usbbt.UsbBtLog.log(null, TAG, "openRfcommStream: trying HSAE Bluetooth stack for $deviceAddress")
             return hsae.openRfcommStream(deviceAddress, uuid)
         }
-        if (tried && lastError != null) {
+        val error = lastError
+        if (tried && error != null) {
             throw java.io.IOException(
-                "Bluetooth RFCOMM unavailable: ${lastError.message ?: lastError.javaClass.simpleName}",
-                lastError,
+                "Bluetooth RFCOMM unavailable: ${error.message ?: error.javaClass.simpleName}",
+                error,
             )
         }
         throw java.io.IOException("no Bluetooth stack available")

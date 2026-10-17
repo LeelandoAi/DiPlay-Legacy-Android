@@ -2044,28 +2044,49 @@ class DiPlayActivity : ComponentActivity() {
     // BYD shows that screen as a dialog and closes it unless its own settings or the car home screen is on top,
     // so the home screen goes first.
     private fun openCarWifiSettings() {
-        // Issue #200: on API < 19 ROMs the WIFI_TETHER_SETTINGS action can resolve to
-        // the plain Wi-Fi settings page instead of tethering. Prefer the explicit AOSP
-        // TetherSettings activity there; it exists on 4.x and the resolve check keeps
-        // vendor ROMs without it on the old path.
-        if (realSdkInt() < Build.VERSION_CODES.KITKAT) {
-            val tether = Intent().setClassName("com.android.settings", "com.android.settings.TetherSettings")
-            if (packageManager.resolveActivity(tether, 0) != null &&
-                runCatching { startActivity(tether) }.isSuccess
-            ) {
-                return
+        // Issues #200 & #207: on custom/legacy head unit ROMs (e.g. Android 4.2/4.4/8.1 Zhangxun, FYT,
+        // Allwinner, Neusoft), generic WIFI_TETHER_SETTINGS actions often resolve to normal Wi-Fi client
+        // settings instead of the portable hotspot screen. Check resolved activity names to avoid opening
+        // the client Wi-Fi screen when the driver tapped "Hotspot settings".
+        fun isRealHotspotTarget(className: String): Boolean {
+            val lower = className.lowercase(java.util.Locale.ROOT)
+            if (lower.contains("tether") || lower.contains("hotspot") ||
+                lower.contains("wifiap") || lower.contains("apsettings") || lower.contains("softap")) {
+                return true
             }
+            if (lower.contains("wifisettings") || lower.contains("wifipicker")) {
+                return false
+            }
+            return true
         }
-        val hotspot = Intent("com.android.settings.WIFI_TETHER_SETTINGS")
-        val target = packageManager.resolveActivity(hotspot, 0)?.activityInfo?.packageName
-        if (target == null) {
-            openSystem(Intent(Settings.ACTION_WIRELESS_SETTINGS))
-            return
+
+        val candidates = listOf(
+            Intent().setClassName("com.android.settings", "com.android.settings.TetherSettings"),
+            Intent().setClassName("com.android.settings", "com.android.settings.Settings\$TetherSettingsActivity"),
+            Intent().setClassName("com.android.settings", "com.android.settings.wifi.tether.WifiTetherSettings"),
+            Intent().setClassName("com.android.settings", "com.android.settings.Settings\$WifiTetherSettingsActivity"),
+            Intent().setClassName("com.android.settings", "com.android.settings.wifi.WifiApSettings"),
+            Intent().setClassName("com.android.settings", "com.android.settings.wifi.WifiApEditDialog"),
+            Intent().setClassName("com.android.settings", "com.android.settings.SubSettings")
+                .putExtra(":settings:show_fragment", "com.android.settings.TetherSettings"),
+            Intent().setClassName("com.android.settings", "com.android.settings.SubSettings")
+                .putExtra(":settings:show_fragment", "com.android.settings.wifi.tether.WifiTetherSettings"),
+            Intent("android.settings.TETHER_SETTINGS"),
+            Intent("com.android.settings.TETHER_SETTINGS"),
+            Intent("com.android.settings.WIFI_TETHER_SETTINGS"),
+        )
+
+        for (candidate in candidates) {
+            val resolved = packageManager.resolveActivity(candidate, 0) ?: continue
+            val className = resolved.activityInfo?.name.orEmpty()
+            if (!isRealHotspotTarget(className)) continue
+            val target = resolved.activityInfo?.packageName
+            if (target == "com.byd.carsettings") {
+                runCatching { startActivity(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)) }
+            }
+            if (runCatching { startActivity(candidate) }.isSuccess) return
         }
-        if (target == "com.byd.carsettings") {
-            runCatching { startActivity(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)) }
-        }
-        if (runCatching { startActivity(hotspot) }.isSuccess) return
+
         openSystem(Intent(Settings.ACTION_WIRELESS_SETTINGS))
     }
 

@@ -807,6 +807,8 @@ private class VideoDecoder(
     private var failureReports = 0
     private val referenceChain = VideoReferenceChain()
     private var lastKeyFrameRequestNs = 0L
+    private var consecutiveInputWithoutOutput = 0
+    private var lastOutputRenderedNs = 0L
     // The main screen keeps the historical log format; other screens are labelled.
     private val stats = VideoStats(statsLabel ?: if (streamType == MAIN_SCREEN_TYPE) "" else " stream=$streamType")
     private val thread = Thread(::run, "carplay-video").apply { isDaemon = true }
@@ -1196,15 +1198,26 @@ private class VideoDecoder(
             }
             queuedSlot = (queuedSlot + 1) % queuedPresentationUs.size
             referenceChain.onQueued()
+            consecutiveInputWithoutOutput++
         } else {
             recover("video frame exceeded codec input capacity")
             return
         }
         drainOutput(codec)
+        if (consecutiveInputWithoutOutput >= MAX_CONSECUTIVE_INPUT_WITHOUT_OUTPUT) {
+            val now = System.nanoTime()
+            val elapsedSinceOutputNs = now - lastOutputRenderedNs
+            if (lastOutputRenderedNs == 0L || elapsedSinceOutputNs >= MIN_OUTPUT_STALL_NS) {
+                recover("video decoder output stalled: $consecutiveInputWithoutOutput frames queued without output")
+                return
+            }
+        }
     }
 
     private fun recover(reason: String) {
         Log.w(TAG, "Video recovery: $reason; waiting for keyframe")
+        consecutiveInputWithoutOutput = 0
+        lastOutputRenderedNs = System.nanoTime()
         stats.onRecovery()
         report("recovery: $reason; waiting for keyframe")
         // Recreate with codec-specific data: flush can discard CSD before the first output.
@@ -1255,7 +1268,11 @@ private class VideoDecoder(
                         if (shown && delay != null && !heldOverGap && !pauseHeld) stats.onLate()
                         codec.releaseOutputBuffer(index, render)
                     }
-                    if (shown) stats.onRendered()
+                    if (shown) {
+                        stats.onRendered()
+                        consecutiveInputWithoutOutput = 0
+                        lastOutputRenderedNs = now
+                    }
                     if (shown && !renderedFrameLogged) {
                         renderedFrameLogged = true
                         report("first frame rendered")
@@ -1300,6 +1317,7 @@ private class VideoDecoder(
     private fun releaseDecoder() {
         val codec = decoder
         decoder = null
+        consecutiveInputWithoutOutput = 0
         if (codec != null) {
             try {
                 codec.stop()
@@ -1328,6 +1346,8 @@ private class VideoDecoder(
         const val SENDER_PAUSE_NS = 120_000_000L
         // Frames before a pause that wait for it: the decoder holds about two, sometimes three.
         const val PAUSE_HELD_FRAMES = 3
+        const val MAX_CONSECUTIVE_INPUT_WITHOUT_OUTPUT = 30
+        const val MIN_OUTPUT_STALL_NS = 1_500_000_000L
         val START_CODE = byteArrayOf(0x00, 0x00, 0x00, 0x01)
     }
 }

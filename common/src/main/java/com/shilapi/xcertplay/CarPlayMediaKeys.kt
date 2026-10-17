@@ -375,7 +375,7 @@ internal object CarPlayMediaKeys {
     ) else null }
 
     fun onLegacyMediaButton(intent: Intent) {
-        if (realSdkInt() >= 21 || intent.action != Intent.ACTION_MEDIA_BUTTON) return
+        if (intent.action != Intent.ACTION_MEDIA_BUTTON) return
         val event = intent.getParcelableExtra<KeyEvent>(Intent.EXTRA_KEY_EVENT) ?: return
         if (event.action != KeyEvent.ACTION_DOWN || event.repeatCount != 0) return
         val index = CarPlayMediaButton.forKeyCode(event.keyCode) ?: return
@@ -383,18 +383,12 @@ internal object CarPlayMediaKeys {
     }
 
     /**
-     * Issue #151: entry point for [WheelMediaKeyReceiver] on GKUI/ECARX head units, where
-     * the steering-wheel media keys only travel as an ordered ACTION_MEDIA_BUTTON broadcast
-     * and never reach the MediaSession. Returns true when CarPlay consumed the key (the
-     * caller should abort the broadcast so the car's mediacenter does not act on it too).
-     *
-     * Gated on the media session existing: it is created once CarPlay audio has started in
-     * this connection, mirroring when the session path would handle keys on other units.
-     * Anything else lets the broadcast pass through to the car's own player.
+     * Issue #151 & #179: entry point for [WheelMediaKeyReceiver] and foreground window dispatch.
+     * When CarPlay is connected, steering-wheel media keys should drive CarPlay directly.
      */
     @Synchronized
     fun handleWheelMediaKey(keyCode: Int): Boolean {
-        if ((session == null && legacyClient == null) || controller == null) return false
+        if (controller == null) return false
         val index = CarPlayMediaButton.forKeyCode(keyCode) ?: return false
         send(index, KeyEvent.keyCodeToString(keyCode))
         return true
