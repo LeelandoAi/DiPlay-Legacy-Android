@@ -85,7 +85,7 @@ class NcmUsbBridge internal constructor(
         }
         val block = Ntb16Codec.build(frame, sequence)
         val transferred = writeUsbChunks(block.size, realSdkInt(), timeoutMillis) { offset, count, timeout ->
-            connection.bulkTransfer(outEndpoint, block, offset, count, timeout)
+            bulkTransferCompat(connection, outEndpoint, block, offset, count, timeout)
         }
         // Before StartCarPlaySession the phone keeps the NCM data path NAKed. Android reports the
         // resulting timeout as -1; it is not a detach and later packets must be allowed to retry.

@@ -521,7 +521,7 @@ class Iap2UsbSession internal constructor(
         require(timeoutMillis > 0) { "timeoutMillis must be positive" }
         if (data.isEmpty()) return@synchronized
         val transferred = writeUsbChunks(data.size, realSdkInt(), timeoutMillis) { offset, count, timeout ->
-            connection.bulkTransfer(outEndpoint, data, offset, count, timeout)
+            bulkTransferCompat(connection, outEndpoint, data, offset, count, timeout)
         }
         if (transferred != data.size) {
             // A -1 bulk transfer means the device stopped responding (wedged USB stack,

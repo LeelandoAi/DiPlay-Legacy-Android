@@ -27,6 +27,25 @@ internal fun queueUsbRequest(request: UsbRequest, buffer: ByteBuffer): Boolean {
 internal fun usbTransferSize(sdk: Int, requested: Int): Int =
     if (sdk < 28) minOf(requested, 16 * 1024) else requested
 
+/**
+ * Issue #213: the 5-arg bulkTransfer(UsbEndpoint, ByteArray, Int, Int, Int) overload
+ * was added in API 18; on API 17 it throws NoSuchMethodError. Fall back to the 4-arg
+ * overload, copying the slice when offset > 0.
+ */
+internal fun bulkTransferCompat(
+    connection: UsbDeviceConnection,
+    endpoint: UsbEndpoint,
+    data: ByteArray,
+    offset: Int,
+    count: Int,
+    timeout: Int,
+): Int = if (realSdkInt() >= Build.VERSION_CODES.JELLY_BEAN_MR2) {
+    connection.bulkTransfer(endpoint, data, offset, count, timeout)
+} else {
+    val slice = if (offset == 0 && count == data.size) data else data.copyOfRange(offset, offset + count)
+    connection.bulkTransfer(endpoint, slice, slice.size, timeout)
+}
+
 /** Preserve the full USBMUX/NCM byte stream when old Android truncates large bulk writes. */
 internal fun writeUsbChunks(
     size: Int,
