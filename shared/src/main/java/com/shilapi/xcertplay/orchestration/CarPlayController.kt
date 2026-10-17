@@ -2547,7 +2547,10 @@ class CarPlayController(
                         vpnService?.sendUnsolicitedNeighborAdvertisement(force = true)
                         // Issue #95: arm the first-TCP watchdog 鈥?a new StartSession means any
                         // previous session no longer counts.
-                        wiredTcpArrived.set(false)
+                        // Issue #208: do NOT reset if a session is already active (e.g. iPhone
+                        // re-sent availability after screen-off); the old TCP is still alive and
+                        // resetting here causes a false-positive watchdog reset.
+                        if (activeSession == null) wiredTcpArrived.set(false)
                     }
                 },
                 airPlayTcpArrived = { wiredTcpArrived.get() },
