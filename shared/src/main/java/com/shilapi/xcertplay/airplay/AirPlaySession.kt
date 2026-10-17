@@ -37,6 +37,7 @@ interface AirPlaySessionListener {
     fun onRemoteControlMessage(session: AirPlaySession, streamId: Long, message: Map<String, Any?>) {}
     /** Video in car: requestUI "videoplayback:", the iPhone asks the car to show its video player. */
     fun onVideoPlaybackUiRequested(session: AirPlaySession) {}
+    fun onModesChanged(session: AirPlaySession, appStates: List<Map<String, Any?>>, resources: List<Map<String, Any?>>) {}
     fun onPortBound(port: Int, isTcp: Boolean) {}
     fun onDebugLog(message: String) {}
 }
@@ -120,6 +121,14 @@ class AirPlaySession(
             ),
         )
     }
+
+    private val currentAppStates = java.util.concurrent.ConcurrentHashMap<Int, Map<String, Any?>>().apply {
+        put(1, linkedMapOf("appStateID" to 1, "speechMode" to -1))
+        put(2, linkedMapOf("appStateID" to 2, "state" to false))
+        put(3, linkedMapOf("appStateID" to 3, "state" to false))
+    }
+
+    fun currentAppStates(): List<Map<String, Any?>> = currentAppStates.values.toList()
 
     fun syncedNtp(): BigInteger = ntp.syncedNtp()
 
@@ -596,6 +605,8 @@ class AirPlaySession(
                 )
             }
             request.method == "POST" && path.endsWith("/command") -> handleCommand(request)
+            request.method == "POST" && (path.endsWith("/modeschanged") || path.endsWith("/changemodes")) ->
+                handleModesChanged(request)
             request.method == "POST" && path.endsWith("/feedback") -> {
                 val body = media.onFeedback(this)
                 if (body == null) {
@@ -771,9 +782,41 @@ class AirPlaySession(
             listener.onVideoPlaybackUiRequested(this)
         } else if (type == "requestUI") {
             listener.onHostUiRequested(this)
+        } else if (type == "changeModes") {
+            val appStates = (params["appStates"] as? List<*>)?.mapNotNull { asMap(it) } ?: emptyList()
+            val resources = (params["resources"] as? List<*>)?.mapNotNull { asMap(it) } ?: emptyList()
+            for (state in appStates) {
+                val id = (state["appStateID"] as? Number)?.toInt() ?: continue
+                currentAppStates[id] = state
+            }
+            listener.onModesChanged(this, appStates, resources)
         }
         listener.onCommand(this, type, params)
         return RtspMessage.Response(status = 200)
+    }
+
+    private fun handleModesChanged(request: RtspMessage.Request): RtspMessage.Response {
+        val body = try {
+            asMap(BplistCodec.decode(request.body)) ?: emptyMap()
+        } catch (error: Exception) {
+            Log.w(TAG, "airplay modesChanged decode failed", error)
+            emptyMap<String, Any?>()
+        }
+        val appStates = (body["appStates"] as? List<*>)?.mapNotNull { asMap(it) } ?: emptyList()
+        val resources = (body["resources"] as? List<*>)?.mapNotNull { asMap(it) } ?: emptyList()
+        debugLog("airplay modesChanged appStates=$appStates resources=$resources")
+        for (state in appStates) {
+            val id = (state["appStateID"] as? Number)?.toInt() ?: continue
+            currentAppStates[id] = state
+        }
+        listener.onModesChanged(this, appStates, resources)
+        val responseBody = linkedMapOf<String, Any?>(
+            "appStates" to currentAppStates.values.toList(),
+        )
+        return RtspMessage.Response(
+            headers = mapOf("Content-Type" to PLIST_CONTENT_TYPE),
+            body = BplistCodec.encode(responseBody),
+        )
     }
 
     private fun handleTeardown(request: RtspMessage.Request): RtspMessage.Response {

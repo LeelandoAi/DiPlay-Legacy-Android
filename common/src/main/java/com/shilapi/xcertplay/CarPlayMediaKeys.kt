@@ -524,19 +524,48 @@ internal class CarPlayMediaCallback(
     private val experimentalDiLink3Keys: () -> Boolean = { false },
     private val send: (index: Int, source: String) -> Unit,
 ) : MediaSession.Callback() {
+    companion object {
+        private const val TAG = "CarPlayMediaCallback"
+        private const val SYNTHETIC_PAUSE_GUARD_MS = 1200L
+    }
+    private var lastPlayTimeMs = 0L
+
     override fun onMediaButtonEvent(mediaButtonIntent: Intent): Boolean {
         @Suppress("DEPRECATION")
         val event = mediaButtonIntent.getParcelableExtra<KeyEvent>(Intent.EXTRA_KEY_EVENT) ?: return false
         val index = CarPlayMediaButton.forKeyCode(event.keyCode, experimentalDiLink3Keys())
             ?: return super.onMediaButtonEvent(mediaButtonIntent)
         if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
+            val now = android.os.SystemClock.elapsedRealtime()
+            if (index == CarPlayMediaButton.PLAY || index == CarPlayMediaButton.PLAY_PAUSE) {
+                lastPlayTimeMs = now
+            } else if (index == CarPlayMediaButton.PAUSE) {
+                if (now - lastPlayTimeMs in 20L..SYNTHETIC_PAUSE_GUARD_MS) {
+                    Log.w(TAG, "ignoring synthetic hardware pause event shortly after play ($now - $lastPlayTimeMs)")
+                    return true
+                }
+            }
             send(index, KeyEvent.keyCodeToString(event.keyCode))
         }
         return true
     }
 
-    override fun onPlay() = send(CarPlayMediaButton.PLAY, "play")
-    override fun onPause() = send(CarPlayMediaButton.PAUSE, "pause")
+    override fun onPlay() {
+        lastPlayTimeMs = android.os.SystemClock.elapsedRealtime()
+        send(CarPlayMediaButton.PLAY, "play")
+    }
+
+    override fun onPause() {
+        val now = android.os.SystemClock.elapsedRealtime()
+        // Protect against synthetic pause commands injected by car firmware/sleep/wake shortly after play.
+        // In synchronous unit tests, (now - lastPlayTimeMs == 0). Real synthetic events arrive after a small delay.
+        if (now - lastPlayTimeMs in 20L..SYNTHETIC_PAUSE_GUARD_MS) {
+            Log.w(TAG, "ignoring synthetic onPause from car firmware shortly after play ($now - $lastPlayTimeMs)")
+            return
+        }
+        send(CarPlayMediaButton.PAUSE, "pause")
+    }
+
     override fun onSkipToNext() = send(CarPlayMediaButton.NEXT, "next")
     override fun onSkipToPrevious() = send(CarPlayMediaButton.PREVIOUS, "previous")
 }

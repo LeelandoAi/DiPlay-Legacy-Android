@@ -446,9 +446,28 @@ class CarPlayController(
             uiListener?.onCommand(session, type, params)
         }
 
+        override fun onModesChanged(
+            session: AirPlaySession,
+            appStates: List<Map<String, Any?>>,
+            resources: List<Map<String, Any?>>,
+        ) {
+            debugLog("AirPlay modesChanged appStates=$appStates resources=$resources")
+            uiListener?.onModesChanged(session, appStates, resources)
+        }
+
         override fun onDebugLog(message: String) {
             debugLog(message)
         }
+    }
+
+    fun currentAppStates(): List<Map<String, Any?>> = activeSession?.currentAppStates() ?: emptyList()
+
+    fun changeModes(appStates: List<Map<String, Any?>>): Boolean {
+        val session = activeSession ?: return false
+        return session.sendCommand(linkedMapOf(
+            "type" to "changeModes",
+            "params" to linkedMapOf("appStates" to appStates),
+        ))
     }
 
     fun attachUi(

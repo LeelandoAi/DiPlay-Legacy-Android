@@ -469,10 +469,20 @@ class UsbBtHci private constructor(
      * Phase 3: the L2CAP layer polls this in its receive loop.
      */
     fun pollAcl(timeoutMs: Int = 500): HciProtocol.AclPacket? {
-        val buf = ByteArray(1024)
+        val buf = ByteArray(2048)
         val read = connection.bulkTransfer(aclInEndpoint, buf, buf.size, timeoutMs)
         if (read <= 0) return null
         return HciProtocol.parseAcl(buf, read)
+    }
+
+    /**
+     * Read all HCI ACL packets available in one bulk-IN transfer.
+     */
+    fun pollAclPackets(timeoutMs: Int = 100): List<HciProtocol.AclPacket> {
+        val buf = ByteArray(2048)
+        val read = connection.bulkTransfer(aclInEndpoint, buf, buf.size, timeoutMs)
+        if (read <= 0) return emptyList()
+        return HciProtocol.parseAclPackets(buf, read)
     }
 
     /**

@@ -234,12 +234,33 @@ object HciProtocol {
         if (length < 4 || length > packet.size) return null
         val handleFlags = (packet[0].toInt() and 0xFF) or ((packet[1].toInt() and 0xFF) shl 8)
         val dataLen = (packet[2].toInt() and 0xFF) or ((packet[3].toInt() and 0xFF) shl 8)
-        if (4 + dataLen != length) return null
+        if (4 + dataLen > length) return null
         return AclPacket(
             handle = handleFlags and 0x0FFF,
             flags = (handleFlags ushr 12) and 0x0F,
             data = packet.copyOfRange(4, 4 + dataLen),
         )
+    }
+
+    /** Parse all consecutive USB HCI ACL packets in [packet] up to [length]. */
+    fun parseAclPackets(packet: ByteArray, length: Int = packet.size): List<AclPacket> {
+        if (length < 4 || length > packet.size) return emptyList()
+        val list = ArrayList<AclPacket>(2)
+        var offset = 0
+        while (offset + 4 <= length) {
+            val handleFlags = (packet[offset].toInt() and 0xFF) or ((packet[offset + 1].toInt() and 0xFF) shl 8)
+            val dataLen = (packet[offset + 2].toInt() and 0xFF) or ((packet[offset + 3].toInt() and 0xFF) shl 8)
+            if (offset + 4 + dataLen > length) break
+            list.add(
+                AclPacket(
+                    handle = handleFlags and 0x0FFF,
+                    flags = (handleFlags ushr 12) and 0x0F,
+                    data = packet.copyOfRange(offset + 4, offset + 4 + dataLen),
+                )
+            )
+            offset += 4 + dataLen
+        }
+        return list
     }
 
     /** Encode a USB HCI ACL packet without the UART H4 indicator. */

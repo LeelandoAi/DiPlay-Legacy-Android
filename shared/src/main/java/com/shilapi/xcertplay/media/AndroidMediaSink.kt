@@ -1840,11 +1840,20 @@ private class AudioRenderer(
     }
 
     @RequiresApi(21)
-    private fun audioAttributesFor(selection: AudioChannelSelection): AudioAttributes =
-        AudioAttributes.Builder()
+    private fun audioAttributesFor(selection: AudioChannelSelection): AudioAttributes {
+        if (selection.channel == AudioChannel.NAVIGATION &&
+            selection.streamType in AudioManager.STREAM_VOICE_CALL..STREAM_ACCESSIBILITY_COMPAT) {
+            try {
+                return AudioAttributes.Builder().setLegacyStreamType(selection.streamType).build()
+            } catch (error: Exception) {
+                Log.w(TAG, "legacy navigation stream ${selection.streamType} rejected; keeping usage routing", error)
+            }
+        }
+        return AudioAttributes.Builder()
             .setUsage(usageFor(selection.channel))
             .setContentType(contentTypeFor(selection.contentType))
             .build()
+    }
 
     @RequiresApi(21)
     private fun attributeDiagnostic(attributes: AudioAttributes?): String =

@@ -4143,6 +4143,21 @@ class CarPlayHostActivity : ComponentActivity() {
                     }
                 }
             }
+
+            override fun onModesChanged(
+                session: AirPlaySession,
+                appStates: List<Map<String, Any?>>,
+                resources: List<Map<String, Any?>>,
+            ) {
+                runOnUiThread {
+                    if (controllerGeneration != restartGeneration || activeAirPlaySession !== session) return@runOnUiThread
+                    val naviState = appStates.find { (it["appStateID"] as? Number)?.toInt() == 3 }
+                    if (naviState != null) {
+                        val active = naviState["state"] == true
+                        appendLog("CarPlay navigation appState changed: active=$active")
+                    }
+                }
+            }
         }
 
     private fun createStatusReporter(

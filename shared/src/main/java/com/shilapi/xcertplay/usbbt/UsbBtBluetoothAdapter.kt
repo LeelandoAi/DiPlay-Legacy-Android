@@ -90,7 +90,8 @@ class UsbBtBluetoothAdapter(
     )
 
     private val pumpRunning = AtomicBoolean(false)
-    private var pumpThread: Thread? = null
+    private var eventPumpThread: Thread? = null
+    private var aclPumpThread: Thread? = null
 
     /** USB permission / detach receivers; registered on first enable() attempt. */
     private var usbReceivers: Closeable? = null
@@ -488,70 +489,85 @@ class UsbBtBluetoothAdapter(
 
     private fun startPump(h: UsbBtHci) {
         if (!pumpRunning.compareAndSet(false, true)) return
-        pumpThread = Thread({
+        eventPumpThread = Thread({
             while (pumpRunning.get()) {
                 // HCI events (connection completions, inbound connection requests, pairing, etc.).
-                val event = runCatching { h.pollEvent(200) }.getOrNull()
-                if (event != null) {
-                    pairingAgent?.onEvent(event)
-                    when (event.code) {
-                        EVT_CONNECTION_REQUEST -> {
-                            val req = parseConnectionRequest(event)
-                            if (req != null) {
-                                val msg = "incoming connection request from ${req.bdAddr} linkType=${req.linkType} CoD=0x${req.classOfDevice.toString(16)}"
-                                Log.i(TAG, msg)
-                                UsbBtLog.log(appContext, TAG, msg)
-                                if (req.linkType == 1) { // ACL
-                                    val acceptCmd = encodeAcceptConnection(req.rawAddr)
-                                    val res = h.sendCommand(OP_ACCEPT_CONNECTION_REQUEST, acceptCmd)
-                                    val resMsg = "accept connection result for ${req.bdAddr}: $res"
-                                    Log.i(TAG, resMsg)
-                                    UsbBtLog.log(appContext, TAG, resMsg)
-                                }
-                            }
-                        }
-                        EVT_CONNECTION_COMPLETE -> {
-                            val cc = parseConnectionComplete(event)
-                            if (cc != null && cc.bdAddr != null) {
-                                val key = cc.bdAddr.uppercase()
-                                if (cc.status == 0) {
-                                    aclHandleByAddr[key] = cc.handle
-                                    connectedOrder.remove(key)
-                                    connectedOrder.addLast(key)
-                                    getOrCreateL2cap(cc.handle, h)
-                                    val msg = "ACL up: $key handle=0x${cc.handle.toString(16)}"
-                                    Log.i(TAG, msg)
-                                    UsbBtLog.log(appContext, TAG, msg)
-                                } else {
-                                    val msg = "ACL connection failed: $key status=0x${cc.status.toString(16)}"
-                                    Log.w(TAG, msg)
-                                    UsbBtLog.warn(appContext, TAG, msg)
-                                }
-                                pendingAcl[key]?.let { pending ->
-                                    pending.handle = cc.handle
-                                    pending.status = cc.status
-                                    pending.latch.countDown()
-                                }
-                            }
-                        }
-                        EVT_DISCONNECTION_COMPLETE -> {
-                            val dc = parseDisconnectionComplete(event)
-                            if (dc != null && dc.status == 0) {
-                                val msg = "ACL disconnected: handle=0x${dc.handle.toString(16)} reason=0x${dc.reason.toString(16)}"
-                                Log.i(TAG, msg)
-                                UsbBtLog.log(appContext, TAG, msg)
-                                onPeerDisconnected(dc.handle)
+                val event = runCatching { h.pollEvent(100) }.getOrNull() ?: continue
+                pairingAgent?.onEvent(event)
+                when (event.code) {
+                    EVT_CONNECTION_REQUEST -> {
+                        val req = parseConnectionRequest(event)
+                        if (req != null) {
+                            val msg = "incoming connection request from ${req.bdAddr} linkType=${req.linkType} CoD=0x${req.classOfDevice.toString(16)}"
+                            Log.i(TAG, msg)
+                            UsbBtLog.log(appContext, TAG, msg)
+                            if (req.linkType == 1) { // ACL
+                                val acceptCmd = encodeAcceptConnection(req.rawAddr)
+                                val res = h.sendCommand(OP_ACCEPT_CONNECTION_REQUEST, acceptCmd)
+                                val resMsg = "accept connection result for ${req.bdAddr}: $res"
+                                Log.i(TAG, resMsg)
+                                UsbBtLog.log(appContext, TAG, resMsg)
                             }
                         }
                     }
-                }
-                // ACL data: route to the owning L2CAP layer.
-                val acl = runCatching { h.pollAcl(200) }.getOrNull()
-                if (acl != null) {
-                    l2capLayers[acl.handle]?.onAclData(acl.data)
+                    EVT_CONNECTION_COMPLETE -> {
+                        val cc = parseConnectionComplete(event)
+                        if (cc != null && cc.bdAddr != null) {
+                            val key = cc.bdAddr.uppercase()
+                            if (cc.status == 0) {
+                                aclHandleByAddr[key] = cc.handle
+                                connectedOrder.remove(key)
+                                connectedOrder.addLast(key)
+                                getOrCreateL2cap(cc.handle, h)
+                                val msg = "ACL up: $key handle=0x${cc.handle.toString(16)}"
+                                Log.i(TAG, msg)
+                                UsbBtLog.log(appContext, TAG, msg)
+                            } else {
+                                val msg = "ACL connection failed: $key status=0x${cc.status.toString(16)}"
+                                Log.w(TAG, msg)
+                                UsbBtLog.warn(appContext, TAG, msg)
+                            }
+                            pendingAcl[key]?.let { pending ->
+                                pending.handle = cc.handle
+                                pending.status = cc.status
+                                pending.latch.countDown()
+                            }
+                        }
+                    }
+                    EVT_DISCONNECTION_COMPLETE -> {
+                        val dc = parseDisconnectionComplete(event)
+                        if (dc != null && dc.status == 0) {
+                            val msg = "ACL disconnected: handle=0x${dc.handle.toString(16)} reason=0x${dc.reason.toString(16)}"
+                            Log.i(TAG, msg)
+                            UsbBtLog.log(appContext, TAG, msg)
+                            onPeerDisconnected(dc.handle)
+                        }
+                    }
                 }
             }
-        }, "UsbBtPump").apply {
+        }, "UsbBtEventPump").apply {
+            isDaemon = true
+            start()
+        }
+
+        aclPumpThread = Thread({
+            while (pumpRunning.get()) {
+                val packets = runCatching { h.pollAclPackets(100) }.getOrNull()
+                if (!packets.isNullOrEmpty()) {
+                    for (acl in packets) {
+                        l2capLayers[acl.handle]?.onAclData(acl.data)
+                    }
+                    // Drain immediately available ACL packets to avoid latency build-up
+                    while (pumpRunning.get()) {
+                        val drain = runCatching { h.pollAclPackets(0) }.getOrNull() ?: break
+                        if (drain.isEmpty()) break
+                        for (acl in drain) {
+                            l2capLayers[acl.handle]?.onAclData(acl.data)
+                        }
+                    }
+                }
+            }
+        }, "UsbBtAclPump").apply {
             isDaemon = true
             start()
         }
@@ -560,8 +576,10 @@ class UsbBtBluetoothAdapter(
     /** Shut the adapter down; idempotent. */
     fun shutdown(unregisterReceivers: Boolean = true) {
         pumpRunning.set(false)
-        pumpThread?.interrupt()
-        pumpThread = null
+        eventPumpThread?.interrupt()
+        eventPumpThread = null
+        aclPumpThread?.interrupt()
+        aclPumpThread = null
         pairingAgent?.stop()
         pairingAgent = null
         if (unregisterReceivers) {

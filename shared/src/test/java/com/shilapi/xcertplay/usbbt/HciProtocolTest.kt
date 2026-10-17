@@ -115,6 +115,28 @@ class HciProtocolTest {
     }
 
     @Test
+    fun aclParseAcceptsTrailingPadding() {
+        val data = byteArrayOf(0x01, 0x02)
+        val packet = HciProtocol.encodeAcl(handle = 0x0042, data = data) + byteArrayOf(0x00, 0x00, 0x00)
+        val parsed = HciProtocol.parseAcl(packet)
+        org.junit.Assert.assertNotNull(parsed)
+        assertEquals(0x0042, parsed?.handle)
+        assertArrayEquals(data, parsed?.data)
+    }
+
+    @Test
+    fun aclParseMultiplePackets() {
+        val p1 = HciProtocol.encodeAcl(handle = 0x01, data = byteArrayOf(0x0A, 0x0B))
+        val p2 = HciProtocol.encodeAcl(handle = 0x02, data = byteArrayOf(0x0C, 0x0D, 0x0E))
+        val packets = HciProtocol.parseAclPackets(p1 + p2)
+        assertEquals(2, packets.size)
+        assertEquals(0x01, packets[0].handle)
+        assertArrayEquals(byteArrayOf(0x0A, 0x0B), packets[0].data)
+        assertEquals(0x02, packets[1].handle)
+        assertArrayEquals(byteArrayOf(0x0C, 0x0D, 0x0E), packets[1].data)
+    }
+
+    @Test
     fun l2capEncodeParseRoundTrip() {
         val payload = byteArrayOf(0x0A, 0x0B, 0x0C)
         val frame = HciProtocol.encodeL2cap(cid = 0x0040, payload = payload)
