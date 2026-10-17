@@ -12,21 +12,28 @@ import android.util.Log
 import com.shilapi.xcertplay.bluetooth.CarPlayBluetooth
 import com.shilapi.xcertplay.bluetooth.CarPlayBluetoothDevice
 import com.shilapi.xcertplay.transport.BlockingDuplexByteStream
+import com.shilapi.xcertplay.usbbt.HciProtocol.EVT_AUTHENTICATION_COMPLETE
 import com.shilapi.xcertplay.usbbt.HciProtocol.EVT_CONNECTION_COMPLETE
 import com.shilapi.xcertplay.usbbt.HciProtocol.EVT_CONNECTION_REQUEST
 import com.shilapi.xcertplay.usbbt.HciProtocol.EVT_DISCONNECTION_COMPLETE
+import com.shilapi.xcertplay.usbbt.HciProtocol.EVT_ENCRYPTION_CHANGE
 import com.shilapi.xcertplay.usbbt.HciProtocol.OP_ACCEPT_CONNECTION_REQUEST
+import com.shilapi.xcertplay.usbbt.HciProtocol.OP_AUTHENTICATION_REQUESTED
 import com.shilapi.xcertplay.usbbt.HciProtocol.OP_CREATE_CONNECTION
 import com.shilapi.xcertplay.usbbt.HciProtocol.OP_DISCONNECT
+import com.shilapi.xcertplay.usbbt.HciProtocol.OP_SET_CONNECTION_ENCRYPTION
 import com.shilapi.xcertplay.usbbt.HciProtocol.encodeAcceptConnection
+import com.shilapi.xcertplay.usbbt.HciProtocol.encodeAuthenticationRequested
 import com.shilapi.xcertplay.usbbt.HciProtocol.encodeBdAddr
 import com.shilapi.xcertplay.usbbt.HciProtocol.encodeCreateConnection
 import com.shilapi.xcertplay.usbbt.HciProtocol.encodeDisconnect
+import com.shilapi.xcertplay.usbbt.HciProtocol.encodeSetConnectionEncryption
 import com.shilapi.xcertplay.usbbt.HciProtocol.parseConnectionComplete
 import com.shilapi.xcertplay.usbbt.HciProtocol.parseConnectionRequest
 import com.shilapi.xcertplay.usbbt.HciProtocol.parseDisconnectionComplete
 import java.io.Closeable
 import java.io.IOException
+import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.LinkedBlockingQueue
@@ -107,6 +114,15 @@ class UsbBtBluetoothAdapter(
 
     /** BD_ADDRs in most-recently-connected order (for getConnectedDevice). */
     private val connectedOrder = java.util.concurrent.ConcurrentLinkedDeque<String>()
+
+    /** ACL handle -> whether link encryption has been verified on this ACL. */
+    private val encryptedHandles = ConcurrentHashMap<Int, Boolean>()
+
+    /** ACL handle -> latch awaiting EVT_AUTHENTICATION_COMPLETE. */
+    private val authLatches = ConcurrentHashMap<Int, CountDownLatch>()
+
+    /** ACL handle -> latch awaiting EVT_ENCRYPTION_CHANGE. */
+    private val encryptLatches = ConcurrentHashMap<Int, CountDownLatch>()
 
     init {
         runCatching {
@@ -347,8 +363,15 @@ class UsbBtBluetoothAdapter(
             // One L2CAP instance per ACL handle, shared by all streams on it.
             val l2cap = getOrCreateL2cap(handle, h)
 
+            // 2.5) Authenticate and enable encryption on ACL link if needed.
+            // iOS requires link encryption (SSP Mode 4) for wireless iAP2 RFCOMM access.
+            runCatching { authenticateAndEncrypt(h, handle) }
+                .onFailure { UsbBtLog.warn(appContext, TAG, "authenticateAndEncrypt failed (non-fatal)", it) }
+
             // 3) SDP: find the iAP2 RFCOMM channel.
-            val sdp = SdpClient(l2cap, handle)
+            val targetUuid = runCatching { UUID.fromString(uuid) }.getOrNull()
+            val uuidBytes = if (targetUuid != null) uuidBigEndian(targetUuid) else HciProtocol.IAP2_UUID_BYTES
+            val sdp = SdpClient(l2cap, handle, uuidBytes)
             val channel = when (val r = sdp.findIap2RfcommChannel()) {
                 is SdpClient.SdpResult.Ok -> {
                     UsbBtLog.log(appContext, TAG, "SDP: iAP2 RFCOMM channel=${r.value}")
@@ -478,10 +501,40 @@ class UsbBtBluetoothAdapter(
             connectedOrder.remove(entry.key)
         }
         l2capLayers.remove(handle)?.let { runCatching { it.close() } }
+        encryptedHandles.remove(handle)
+        authLatches.remove(handle)?.countDown()
+        encryptLatches.remove(handle)?.countDown()
         Log.i(TAG, "ACL down (peer disconnected): handle=0x${handle.toString(16)}")
     }
 
     private fun teardown(handle: Int) = releaseAclRef(handle)
+
+    private fun authenticateAndEncrypt(h: UsbBtHci, handle: Int, timeoutMs: Long = 10_000L) {
+        if (encryptedHandles[handle] == true) return
+        val authLatch = CountDownLatch(1)
+        authLatches[handle] = authLatch
+        try {
+            val authRes = h.sendCommand(OP_AUTHENTICATION_REQUESTED, encodeAuthenticationRequested(handle))
+            UsbBtLog.log(appContext, TAG, "Authentication_Requested for handle=0x${handle.toString(16)}: $authRes")
+            if (authRes is UsbBtHci.HciResult.Ok) {
+                authLatch.await(timeoutMs, TimeUnit.MILLISECONDS)
+            }
+        } finally {
+            authLatches.remove(handle)
+        }
+
+        val encryptLatch = CountDownLatch(1)
+        encryptLatches[handle] = encryptLatch
+        try {
+            val encRes = h.sendCommand(OP_SET_CONNECTION_ENCRYPTION, encodeSetConnectionEncryption(handle, true))
+            UsbBtLog.log(appContext, TAG, "Set_Connection_Encryption for handle=0x${handle.toString(16)}: $encRes")
+            if (encRes is UsbBtHci.HciResult.Ok) {
+                encryptLatch.await(5_000L, TimeUnit.MILLISECONDS)
+            }
+        } finally {
+            encryptLatches.remove(handle)
+        }
+    }
 
     // ------------------------------------------------------------------
     // Event / ACL pump.
@@ -518,8 +571,11 @@ class UsbBtBluetoothAdapter(
                                 aclHandleByAddr[key] = cc.handle
                                 connectedOrder.remove(key)
                                 connectedOrder.addLast(key)
+                                if (cc.encryptionEnabled) {
+                                    encryptedHandles[cc.handle] = true
+                                }
                                 getOrCreateL2cap(cc.handle, h)
-                                val msg = "ACL up: $key handle=0x${cc.handle.toString(16)}"
+                                val msg = "ACL up: $key handle=0x${cc.handle.toString(16)} encrypted=${cc.encryptionEnabled}"
                                 Log.i(TAG, msg)
                                 UsbBtLog.log(appContext, TAG, msg)
                             } else {
@@ -532,6 +588,30 @@ class UsbBtBluetoothAdapter(
                                 pending.status = cc.status
                                 pending.latch.countDown()
                             }
+                        }
+                    }
+                    EVT_AUTHENTICATION_COMPLETE -> {
+                        if (event.params.size >= 3) {
+                            val status = event.params[0].toInt() and 0xFF
+                            val handle = (event.params[1].toInt() and 0xFF) or (((event.params[2].toInt() and 0xFF) and 0x0F) shl 8)
+                            val msg = "HCI authentication complete for handle=0x${handle.toString(16)} status=0x${status.toString(16)}"
+                            Log.i(TAG, msg)
+                            UsbBtLog.log(appContext, TAG, msg)
+                            authLatches[handle]?.countDown()
+                        }
+                    }
+                    EVT_ENCRYPTION_CHANGE -> {
+                        if (event.params.size >= 4) {
+                            val status = event.params[0].toInt() and 0xFF
+                            val handle = (event.params[1].toInt() and 0xFF) or (((event.params[2].toInt() and 0xFF) and 0x0F) shl 8)
+                            val enabled = event.params[3].toInt() and 0xFF
+                            val msg = "HCI encryption change for handle=0x${handle.toString(16)} status=0x${status.toString(16)} enabled=$enabled"
+                            Log.i(TAG, msg)
+                            UsbBtLog.log(appContext, TAG, msg)
+                            if (status == 0 && enabled != 0) {
+                                encryptedHandles[handle] = true
+                            }
+                            encryptLatches[handle]?.countDown()
                         }
                     }
                     EVT_DISCONNECTION_COMPLETE -> {
@@ -609,6 +689,11 @@ class UsbBtBluetoothAdapter(
         aclRefCount.clear()
         connectedOrder.clear()
         pendingAcl.clear()
+        encryptedHandles.clear()
+        authLatches.values.forEach { it.countDown() }
+        authLatches.clear()
+        encryptLatches.values.forEach { it.countDown() }
+        encryptLatches.clear()
         UsbBtLog.log(appContext, TAG, "USB Bluetooth shut down")
     }
 

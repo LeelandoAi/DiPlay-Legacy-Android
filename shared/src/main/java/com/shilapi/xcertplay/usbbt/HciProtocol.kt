@@ -283,6 +283,7 @@ object HciProtocol {
     const val EVT_CONNECTION_REQUEST = 0x04
     const val EVT_DISCONNECTION_COMPLETE = 0x05
     const val EVT_AUTHENTICATION_COMPLETE = 0x06
+    const val EVT_ENCRYPTION_CHANGE = 0x08
     const val EVT_NUM_COMPLETED_PACKETS = 0x13
     const val EVT_PIN_CODE_REQUEST = 0x16
     const val EVT_LINK_KEY_REQUEST = 0x17
@@ -299,12 +300,24 @@ object HciProtocol {
     val OP_LINK_KEY_REQUEST_NEGATIVE_REPLY = opcode(0x01, 0x000C)
     val OP_PIN_CODE_REQUEST_REPLY = opcode(0x01, 0x000D)
     val OP_PIN_CODE_REQUEST_NEGATIVE_REPLY = opcode(0x01, 0x000E)
+    val OP_AUTHENTICATION_REQUESTED = opcode(0x01, 0x0011)
+    val OP_SET_CONNECTION_ENCRYPTION = opcode(0x01, 0x0013)
     val OP_IO_CAPABILITY_REQUEST_REPLY = opcode(0x01, 0x002B)
     val OP_USER_CONFIRMATION_REQUEST_REPLY = opcode(0x01, 0x002C)
     val OP_USER_CONFIRMATION_REQUEST_NEGATIVE_REPLY = opcode(0x01, 0x002D)
     val OP_WRITE_AUTHENTICATION_ENABLE = opcode(0x03, 0x0020)
     val OP_WRITE_SIMPLE_PAIRING_MODE = opcode(0x03, 0x0056)
     val OP_SET_EVENT_MASK = opcode(0x03, 0x0001)
+
+    fun encodeAuthenticationRequested(handle: Int): ByteArray =
+        byteArrayOf((handle and 0xFF).toByte(), ((handle ushr 8) and 0x0F).toByte())
+
+    fun encodeSetConnectionEncryption(handle: Int, encrypt: Boolean): ByteArray =
+        byteArrayOf(
+            (handle and 0xFF).toByte(),
+            ((handle ushr 8) and 0x0F).toByte(),
+            if (encrypt) 0x01 else 0x00,
+        )
 
     // Vendor firmware-download commands (OGF 0x3F). Used when HCI_Reset gets no
     // response from a dongle whose chip needs firmware uploaded first.
@@ -390,13 +403,8 @@ object HciProtocol {
     const val SDP_PDU_SERVICE_SEARCH_ATTR_REQ = 0x06
     const val SDP_PDU_SERVICE_SEARCH_ATTR_RSP = 0x07
 
-    /** iAP2 service class UUID (128-bit). Public CarPlay accessory UUID. */
-    val IAP2_UUID_BYTES: ByteArray = byteArrayOf(
-        0x00.toByte(), 0x00.toByte(), 0x00.toByte(), 0x00.toByte(),
-        0x00.toByte(), 0x00.toByte(), 0x10.toByte(), 0x00.toByte(),
-        0x80.toByte(), 0x00.toByte(), 0x00.toByte(), 0x80.toByte(),
-        0x5F.toByte(), 0x9B.toByte(), 0x34.toByte(), 0xFB.toByte(),
-    )
+    /** iAP2 iPhone service class UUID (128-bit big-endian). */
+    val IAP2_UUID_BYTES: ByteArray = uuidBigEndian(UsbBtIdentity.IAP2_IPHONE_UUID)
 
     // ------------------------------------------------------------------
     // BR/EDR connection management (Phase 5).
@@ -441,6 +449,7 @@ object HciProtocol {
         val status: Int,
         val handle: Int,
         val bdAddr: String?,
+        val encryptionEnabled: Boolean = false,
     )
 
     /** Parse Connection Complete: status(1) | handle(2) | BD_ADDR(6) | link_type(1) | encryption(1). */
@@ -452,6 +461,7 @@ object HciProtocol {
             status = event.params[0].toInt() and 0xFF,
             handle = handle,
             bdAddr = parseBdAddrBytes(event.params, 3),
+            encryptionEnabled = (event.params[10].toInt() and 0xFF) != 0,
         )
     }
 
