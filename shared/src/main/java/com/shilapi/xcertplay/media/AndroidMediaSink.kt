@@ -1413,6 +1413,8 @@ private class AudioRenderer(
     private var diagnosticStage = "starting"
     private var lastDecoderOutputMetadata: String? = null
     private var decoderOutputReports = 0
+    // Issue #170: set once the platform AAC decoder is proven degenerate and swapped out.
+    private var softwareAacFallbackDone = false
     private val thread = Thread(::run, "carplay-audio").apply { isDaemon = true }
 
     fun start() {
@@ -1491,6 +1493,14 @@ private class AudioRenderer(
     }
 
     private fun configureCodec(mime: String) {
+        codec = createConfiguredDecoder(mime, forceSoftware = false)
+    }
+
+    /**
+     * Builds, configures and starts an audio decoder without touching [codec], so the
+     * degenerate-decoder fallback can construct the replacement before releasing the old one.
+     */
+    private fun createConfiguredDecoder(mime: String, forceSoftware: Boolean): MediaCodec? {
         diagnosticStage = "decoder-format"
         val mediaFormat = MediaFormat().apply {
             setString(MediaFormat.KEY_MIME, mime)
@@ -1513,9 +1523,18 @@ private class AudioRenderer(
                     "csd0=${aacAudioSpecificConfig().toHexString()}",
             )
         }
-        codec = try {
+        val softwareName = if (forceSoftware) findSoftwareDecoderName(mime) else null
+        if (forceSoftware && softwareName == null) {
+            report("Audio: no software decoder found for $mime on this device; keeping platform decoder")
+            return null
+        }
+        return try {
             MediaCodecStartup.create(
-                create = { diagnosticStage = "decoder-create"; MediaCodec.createDecoderByType(mime) },
+                create = {
+                    diagnosticStage = "decoder-create"
+                    if (softwareName != null) MediaCodec.createByCodecName(softwareName)
+                    else MediaCodec.createDecoderByType(mime)
+                },
                 configure = { diagnosticStage = "decoder-configure"; it.configure(mediaFormat, null, null, 0) },
                 start = { diagnosticStage = "decoder-start"; it.start() },
                 release = { it.release() },
@@ -1532,6 +1551,76 @@ private class AudioRenderer(
             reportFailure(error)
             null
         }
+    }
+
+    /**
+     * Issue #170: some vendor AAC decoders (seen on AutoChips AC822X, Android 4.2.2) accept the
+     * stream but emit ~1 PCM frame per output buffer instead of ~1024, so the prebuffer start
+     * threshold is never reached, the track never starts, and there is silence with no error
+     * anywhere. When the decode yield is pathologically low after several seconds of streaming,
+     * swap the platform decoder for the software one, once per renderer. Healthy decoders can
+     * never trip this: nominal AAC-LC yield is 1024 frames per input.
+     */
+    private fun maybeFallbackDegenerateDecoder() {
+        if (!running) return
+        if (format.codec != AudioCodecKind.AAC_LC) return
+        if (softwareAacFallbackDone || playbackStarted) return
+        if (inputQueued < DEGENERATE_DECODER_MIN_INPUTS) return
+        // Less than 1/16th of the nominal yield.
+        if (totalWrittenFrames >= inputQueued * 64L) return
+        softwareAacFallbackDone = true
+        val inputs = inputQueued
+        val frames = totalWrittenFrames
+        val replacement = createConfiguredDecoder(MediaFormat.MIMETYPE_AUDIO_AAC, forceSoftware = true)
+            ?: return
+        val old = codec
+        codec = replacement
+        runCatching { old?.stop() }
+        runCatching { old?.release() }
+        // Reset decode-side state; the (correctly configured) AudioTrack is untouched, and the
+        // queued packets feed the new decoder from the live stream.
+        inputQueued = 0
+        inputDropped = 0
+        outputBuffers = 0
+        totalWrittenFrames = 0
+        prebufferBytes = 0
+        firstPcmLogged = false
+        firstPcmWriteReported = false
+        firstInputQueuedLogged = false
+        lastDecoderOutputMetadata = null
+        decoderOutputReports = 0
+        report(
+            "Audio: platform AAC decoder degenerate (frames=$frames from inputs=$inputs); " +
+                "switched to software decoder",
+        )
+        Log.i(TAG, "audio AAC decoder fallback to software after degenerate platform output")
+    }
+
+    /**
+     * Pre-Q mirror of the video path's software-decoder lookup: MediaCodecList(REGULAR_CODECS)
+     * is API 21+, so on older releases scan the legacy list for the well-known Google software
+     * decoder. Dalvik-safe: isSoftwareOnly is only touched on API 29+.
+     */
+    private fun findSoftwareDecoderName(mime: String): String? {
+        if (realSdkInt() >= Build.VERSION_CODES.Q) {
+            return runCatching {
+                MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos.firstOrNull {
+                    !it.isEncoder && it.isSoftwareOnly && mime in it.supportedTypes
+                }?.name
+            }.getOrNull()
+        }
+        if (realSdkInt() >= 16) {
+            @Suppress("DEPRECATION")
+            return runCatching {
+                (0 until MediaCodecList.getCodecCount()).mapNotNull { i ->
+                    @Suppress("DEPRECATION")
+                    MediaCodecList.getCodecInfoAt(i)
+                }.firstOrNull {
+                    !it.isEncoder && it.name.startsWith("OMX.google.") && mime in it.supportedTypes
+                }?.name
+            }.getOrNull()
+        }
+        return null
     }
 
     private fun createTrack() {
@@ -2128,6 +2217,9 @@ private class AudioRenderer(
         zeroWritesThisWindow = 0
         partialWritesThisWindow = 0
         statsWindowStartNs = now
+        // Runs on the worker thread once per stats window; see Issue #170.
+        diagnosticStage = "decoder-health"
+        maybeFallbackDegenerateDecoder()
     }
 
     private fun reportFailure(error: Throwable) {
@@ -2224,5 +2316,7 @@ private class AudioRenderer(
         const val STATS_TAG = "DiPlay-AudioStats"
         const val STATS_WINDOW_NS = 5_000_000_000L
         const val DECODED_BUFFER_LOG_INTERVAL = 50
+        // Issue #170: inputs before the degenerate-decoder check may fire (~5 s of AAC-LC).
+        const val DEGENERATE_DECODER_MIN_INPUTS = 240
     }
 }
