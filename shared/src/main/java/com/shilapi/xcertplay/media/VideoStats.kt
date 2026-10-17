@@ -53,6 +53,14 @@ internal class VideoStats(
     /** Smooth video's current display delay ([PacingDelay]). */
     @Synchronized fun onPacingDelay(ns: Long) { pacingDelayNanos = ns }
 
+    /** True if the pipeline is receiving a steady stream of frames but none are being rendered. */
+    @Synchronized fun shouldRecoverDegeneratePipeline(): Boolean {
+        val now = nanoTime()
+        val elapsedNs = now - windowStartNs
+        // If within the last 2+ seconds we received at least 30 frames but rendered 0, the pipeline is stalled
+        return elapsedNs >= 2_000_000_000L && received >= 30 && rendered == 0
+    }
+
     private fun decodeSummary(): String {
         if (decodeSamples == 0) return ""
         val sorted = decodeMicros.copyOf(decodeSamples).also { it.sort() }

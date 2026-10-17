@@ -135,7 +135,7 @@ object CarHotspotTethering {
                 log("car hotspot: wifi already off before AP start")
                 return
             }
-            if (runCatching { wifi.isWifiEnabled = false }.getOrNull() != true) {
+            if (runCatching { wifi.setWifiEnabled(false) }.getOrNull() != true) {
                 log("car hotspot: could not turn wifi off (attempt ${attempt + 1})")
                 return
             }

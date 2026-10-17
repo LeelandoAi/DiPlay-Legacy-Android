@@ -591,8 +591,8 @@ class CarPlayHostActivity : ComponentActivity() {
             videoSurfaceOwner.replace(surface, releaseOnDetach = false)
             appendLog("SurfaceView video surface created valid=${surface.isValid}")
             attachSurface(surface)
-            // A still CarPlay screen sends no frames, so ask for one instead of showing the parked gap.
-            if (smoothVideo) sink?.refreshPicture(SCREEN_TYPE_MAIN)
+            // A still CarPlay screen sends no frames, so ask for one so the screen is immediately populated.
+            sink?.refreshPicture(SCREEN_TYPE_MAIN)
             videoView?.let { updateVideoLayout(it.width, it.height) }
         }
 
@@ -952,6 +952,7 @@ class CarPlayHostActivity : ComponentActivity() {
         darkMode = nightModeController.night
         if (activeAirPlaySession != null) {
             syncAirPlayDarkMode(ThemeModeDiagnostics.Source.RESUME)
+            sink?.refreshPicture(SCREEN_TYPE_MAIN)
         }
         if (!menuOpen) {
             displayScalePercent = AirPlayPersistence.loadDisplayScalePercent(this)
@@ -4070,6 +4071,10 @@ class CarPlayHostActivity : ComponentActivity() {
             override fun onVideoFrameRendered(session: AirPlaySession) {
                 runOnUiThread {
                     if (controllerGeneration != restartGeneration || activeAirPlaySession !== session || shuttingDown.get()) return@runOnUiThread
+                    if (SCREEN_TYPE_MAIN !in activeScreenStreamTypes) {
+                        activeScreenStreamTypes.add(SCREEN_TYPE_MAIN)
+                        updateDebugOverlays()
+                    }
                     if (!startupRetryBudget.firstFrame(session, android.os.SystemClock.elapsedRealtime())) return@runOnUiThread
                     mainHandler.postDelayed({
                         if (controllerGeneration == restartGeneration && activeAirPlaySession === session &&
@@ -4245,6 +4250,7 @@ class CarPlayHostActivity : ComponentActivity() {
             onScreenStreamStateChanged(restartGeneration, type, active)
         }
         currentSurface?.let(::attachSurface)
+        sink?.refreshPicture(SCREEN_TYPE_MAIN)
         val serviceReused = snapshot.controller.hasActiveAirPlayAttachment()
         appendLog(
             if (serviceReused) {

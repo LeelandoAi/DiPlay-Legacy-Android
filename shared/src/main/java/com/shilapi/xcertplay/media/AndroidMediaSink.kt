@@ -808,6 +808,7 @@ private class VideoDecoder(
     private val referenceChain = VideoReferenceChain()
     private var lastKeyFrameRequestNs = 0L
     private var consecutiveInputWithoutOutput = 0
+    private var consecutiveDroppedWithoutKeyFrame = 0
     private var lastOutputRenderedNs = 0L
     // The main screen keeps the historical log format; other screens are labelled.
     private val stats = VideoStats(statsLabel ?: if (streamType == MAIN_SCREEN_TYPE) "" else " stream=$streamType")
@@ -894,7 +895,11 @@ private class VideoDecoder(
                     }
                     decoder?.let(::drainOutput)
                     stats.logIfDue()?.let(report)
-                    if (referenceChain.needsKeyFrame && lastConfig != null && outputSurface != null) requestKeyFrameIfDue()
+                    if (outputSurface != null && stats.shouldRecoverDegeneratePipeline()) {
+                        recover("pipeline receiving frames but 0 rendered")
+                    } else if (referenceChain.needsKeyFrame && lastConfig != null && outputSurface != null) {
+                        requestKeyFrameIfDue()
+                    }
                 } catch (error: Exception) {
                     if (running) Log.e(TAG, "video decoder job failed: ${job?.javaClass?.simpleName}", error)
                     if (running) reportFailure("stage=${job?.javaClass?.simpleName ?: "drain"}", error)
@@ -1146,9 +1151,17 @@ private class VideoDecoder(
         if (outputSurface == null) return
         if (annexB.isEmpty()) { recover("invalid video access unit"); return }
         if (!referenceChain.accepts(annexB, config.codec)) {
-            requestKeyFrameIfDue()
+            consecutiveDroppedWithoutKeyFrame++
+            if (consecutiveDroppedWithoutKeyFrame >= 60) {
+                // If we've dropped ~2 seconds of frames waiting for keyframe, force-request keyframe immediately
+                requestKeyFrameIfDue(force = true)
+                consecutiveDroppedWithoutKeyFrame = 0
+            } else {
+                requestKeyFrameIfDue()
+            }
             return
         }
+        consecutiveDroppedWithoutKeyFrame = 0
         if (decoder == null) configureDecoder(config)
         val codec = decoder ?: return
         if (!submittedFrameLogged) {
@@ -1217,18 +1230,19 @@ private class VideoDecoder(
     private fun recover(reason: String) {
         Log.w(TAG, "Video recovery: $reason; waiting for keyframe")
         consecutiveInputWithoutOutput = 0
+        consecutiveDroppedWithoutKeyFrame = 0
         lastOutputRenderedNs = System.nanoTime()
         stats.onRecovery()
         report("recovery: $reason; waiting for keyframe")
         // Recreate with codec-specific data: flush can discard CSD before the first output.
         releaseDecoder()
         referenceChain.reset()
-        requestKeyFrameIfDue()
+        requestKeyFrameIfDue(force = true)
     }
 
-    private fun requestKeyFrameIfDue() {
+    private fun requestKeyFrameIfDue(force: Boolean = false) {
         val now = System.nanoTime()
-        if (lastKeyFrameRequestNs != 0L && now - lastKeyFrameRequestNs < 1_000_000_000L) return
+        if (!force && lastKeyFrameRequestNs != 0L && now - lastKeyFrameRequestNs < 1_000_000_000L) return
         lastKeyFrameRequestNs = now
         requestKeyFrame()
     }

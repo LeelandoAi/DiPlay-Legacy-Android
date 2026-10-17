@@ -2262,7 +2262,7 @@ class CarPlayController(
                     val found = runCatching { iphoneHost.discover().firstOrNull() }.getOrNull()
                     val hasCarPlayConfig = found != null && runCatching { IphoneCarPlayConfiguration.find(found) != null }.getOrDefault(false)
                     val isNewDevice = found != null && (found.deviceId != previous.deviceId || found.deviceName != previous.deviceName)
-                    if (found != null && (hasCarPlayConfig || isNewDevice || elapsed >= 2500)) {
+                    if (found != null && (hasCarPlayConfig || isNewDevice || elapsed >= 800)) {
                         availabilityPollGeneration.incrementAndGet()
                         connectionDiagnostic("USB transition polling found device after ${elapsed}ms (hasCarPlayConfig=$hasCarPlayConfig isNewDevice=$isNewDevice)")
                         requestIphonePermission(found)
@@ -2272,13 +2272,13 @@ class CarPlayController(
                         fail(IphoneUsbException.DeviceUnavailable("iPhone USB re-enumeration timed out after 30 seconds"))
                         return
                     }
-                    mainHandler.postDelayed(this, 500)
+                    mainHandler.postDelayed(this, 250)
                 } catch (error: Throwable) {
                     fail(error)
                 }
             }
         }
-        mainHandler.postDelayed(poll, 500)
+        mainHandler.postDelayed(poll, 250)
     }
 
     private fun onIphoneAttached(device: UsbDevice) {
@@ -2520,12 +2520,15 @@ class CarPlayController(
             val carkit = try {
                 carKitClient.open(pairRecord, config.label)
             } catch (error: Throwable) {
-                val rejection = rejectedPairRecordError(error)
-                if (savedPairRecord == null || rejection == null) throw error
-                debugLog("saved Lockdown pair record rejected by Lockdown error=$rejection; clearing and pairing again")
-                clearPairRecord()
-                pairRecord = pairNewRecord(pairingClient)
-                carKitClient.open(pairRecord, config.label)
+                if (savedPairRecord != null) {
+                    val rejection = rejectedPairRecordError(error) ?: error.javaClass.simpleName
+                    debugLog("saved Lockdown pair record failed error=$rejection; clearing and pairing again")
+                    clearPairRecord()
+                    pairRecord = pairNewRecord(pairingClient)
+                    carKitClient.open(pairRecord, config.label)
+                } else {
+                    throw error
+                }
             }
             wiredChain(8, "CarKit service opened")
             debugLog("wired com.apple.carkit.service stream opened")

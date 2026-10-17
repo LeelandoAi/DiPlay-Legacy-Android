@@ -68,7 +68,7 @@ class LockdownPairingClient(
                     )
                 }
                 val response = try {
-                    channel.request(pairRequest(label, record), stepTimeoutMillis(deadline))
+                    channel.request(pairRequest(label, record), minOf(PAIR_STEP_TIMEOUT_MILLIS, deadline.remainingMillis()))
                 } catch (_: IphoneUsbException.TimedOut) {
                     pending = true
                     null
@@ -229,6 +229,7 @@ class LockdownPairingClient(
         const val RETRY_CHECK_MILLIS = 100L
         const val NANOS_PER_MILLISECOND = 1_000_000L
         const val MAXIMUM_STEP_TIMEOUT_MILLIS = 10_000L
+        const val PAIR_STEP_TIMEOUT_MILLIS = 3_000L
         const val MAXIMUM_TOTAL_TIMEOUT_MILLIS = 5 * 60_000L
     }
 }
