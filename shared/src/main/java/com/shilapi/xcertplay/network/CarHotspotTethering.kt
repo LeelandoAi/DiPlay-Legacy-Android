@@ -3,6 +3,7 @@ package com.shilapi.xcertplay.network
 import android.content.Context
 import android.net.ConnectivityManager
 import android.os.Build
+import android.os.SystemClock
 import com.shilapi.xcertplay.compat.realSdkInt
 import android.os.Bundle
 import android.os.ResultReceiver
@@ -37,6 +38,7 @@ object CarHotspotTethering {
         timeoutMillis: Long = WirelessStartupPolicy.HOTSPOT_READY_MILLIS,
         log: (String) -> Unit,
     ): Result {
+        disableWifiBeforeHotspot(context, log)
         val deadline = System.nanoTime() + timeoutMillis * 1_000_000L
         val observedAdbState = AtomicReference<Boolean?>()
         val startReflection: (ResultReceiver) -> Unit = { receiver ->
@@ -110,6 +112,48 @@ object CarHotspotTethering {
         if (!ok) throw NoSuchMethodException("setWifiApEnabled returned false")
         // 0 = no error; the caller polls isEnabled() until the AP comes up.
         receiver.send(0, null)
+    }
+
+    /**
+     * Issue #172: on some head units the Wi-Fi station and the hotspot AP conflict,
+     * so starting the AP with Wi-Fi still on fails silently at boot. The user-verified
+     * flow is to turn Wi-Fi off (twice, ~1s apart) before starting the hotspot; mirror
+     * it here. This only runs in the head-unit-as-AP autostart path, and any failure
+     * just falls through to the normal AP startup, so units without the conflict
+     * behave exactly as before.
+     */
+    private fun disableWifiBeforeHotspot(context: Context, log: (String) -> Unit) {
+        val wifi = if (realSdkInt() >= Build.VERSION_CODES.M) {
+            context.getSystemService(android.net.wifi.WifiManager::class.java)
+        } else {
+            @Suppress("DEPRECATION")
+            context.getSystemService(Context.WIFI_SERVICE) as? android.net.wifi.WifiManager
+        } ?: return
+        repeat(2) { attempt ->
+            val enabled = runCatching { wifi.isWifiEnabled }.getOrNull() ?: return
+            if (!enabled) {
+                log("car hotspot: wifi already off before AP start")
+                return
+            }
+            if (runCatching { wifi.isWifiEnabled = false }.getOrNull() != true) {
+                log("car hotspot: could not turn wifi off (attempt ${attempt + 1})")
+                return
+            }
+            val waitUntil = SystemClock.elapsedRealtime() + 1_000L
+            while (runCatching { wifi.isWifiEnabled }.getOrDefault(true) &&
+                SystemClock.elapsedRealtime() < waitUntil) {
+                try {
+                    Thread.sleep(100L)
+                } catch (_: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    return
+                }
+            }
+            if (runCatching { wifi.isWifiEnabled }.getOrDefault(true)) {
+                log("car hotspot: wifi still on after turn-off (attempt ${attempt + 1})")
+            }
+        }
+        log("car hotspot: wifi turned off before AP start")
     }
 
     /** An ADB observation supplements hidden platform status, but never overrides a current off state. */
