@@ -349,9 +349,13 @@ class UsbBtBluetoothAdapter(
             // 3) SDP: find the iAP2 RFCOMM channel.
             val sdp = SdpClient(l2cap, handle)
             val channel = when (val r = sdp.findIap2RfcommChannel()) {
-                is SdpClient.SdpResult.Ok -> r.value
+                is SdpClient.SdpResult.Ok -> {
+                    UsbBtLog.log(appContext, TAG, "SDP: iAP2 RFCOMM channel=${r.value}")
+                    r.value
+                }
                 is SdpClient.SdpResult.Failed -> {
                     Log.w(TAG, "SDP failed (${r.reason}); falling back to channel $FALLBACK_IAP2_CHANNEL")
+                    UsbBtLog.warn(appContext, TAG, "SDP failed (${r.reason}); falling back to channel $FALLBACK_IAP2_CHANNEL")
                     FALLBACK_IAP2_CHANNEL
                 }
             }
@@ -399,6 +403,7 @@ class UsbBtBluetoothAdapter(
         aclHandleByAddr[key]?.let { existing ->
             aclRefCount.getOrPut(existing) { AtomicInteger(0) }.incrementAndGet()
             Log.i(TAG, "ACL reused: $bdAddr handle=0x${existing.toString(16)}")
+            UsbBtLog.log(appContext, TAG, "ACL reused: $bdAddr handle=0x${existing.toString(16)}")
             return existing
         }
         val addrBytes = encodeBdAddr(bdAddr)
@@ -425,6 +430,7 @@ class UsbBtBluetoothAdapter(
             connectedOrder.remove(key)
             connectedOrder.addLast(key)
             Log.i(TAG, "ACL up: $bdAddr handle=0x${handle.toString(16)}")
+            UsbBtLog.log(appContext, TAG, "ACL created: $bdAddr handle=0x${handle.toString(16)}")
             return handle
         } finally {
             pendingAcl.remove(key)
