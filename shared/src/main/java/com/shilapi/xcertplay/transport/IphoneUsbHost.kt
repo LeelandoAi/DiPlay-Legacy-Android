@@ -472,7 +472,7 @@ class IphoneUsbHost(
         private const val CARPLAY_CONFIGURATION_INDEX = 0x0004
         private const val VENDOR_RESPONSE_LENGTH = 1
         /** iPhone USB product ID once it has switched into CarPlay mode (issue #201). */
-        private const val CARPLAY_MODE_PID = 0x12a8
+        internal const val CARPLAY_MODE_PID = 0x12a8
         private const val CONTROL_TRANSFER_TIMEOUT_MILLIS = 1_000
         /**
          * Issue #112: the iPhone disconnects for ~1s while re-enumerating into the CarPlay

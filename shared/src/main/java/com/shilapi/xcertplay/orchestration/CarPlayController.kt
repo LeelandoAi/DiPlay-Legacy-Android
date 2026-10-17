@@ -2170,6 +2170,20 @@ class CarPlayController(
     private fun beginReenumeration(device: UsbDevice) {
         phase = Phase.REENUMERATION
         reenumerationAttempts += 1
+        // Issue #205/#211: an already-trusted iPhone enumerates directly in CarPlay mode
+        // (pid 0x12a8). The Apple vendor re-enumeration request is meaningless there and
+        // iOS STALLs it, which used to fail the whole connection with a misleading
+        // "emulation box" error. Skip the request; the descriptors just need a moment
+        // to settle after attach, then open the data paths directly.
+        if (device.productId == IphoneUsbHost.CARPLAY_MODE_PID) {
+            connectionDiagnostic(
+                "USB device already in CarPlay mode (pid=0x12a8); " +
+                    "skipping vendor re-enumeration request, polling descriptors",
+            )
+            onStatus(CarPlayStatus.SelectingConfiguration)
+            pollCarPlayModeConfiguration(device)
+            return
+        }
         val generation = availabilityPollGeneration.incrementAndGet()
         connectionDiagnostic("USB transition requested count=$reenumerationAttempts")
         onStatus(CarPlayStatus.SelectingConfiguration)
@@ -2183,6 +2197,49 @@ class CarPlayController(
                 is IphoneUsbHost.TransitionResult.Failed -> fail(transition.error)
             }
         }
+    }
+
+    /**
+     * Issue #205/#211: an iPhone already in CarPlay mode (pid 0x12a8) needs no vendor
+     * re-enumeration request; its USB descriptors just need a moment to settle after
+     * attach (the first inspection right after discovery often parses nothing). Poll
+     * the descriptor inspection briefly, then open the data paths directly.
+     */
+    private fun pollCarPlayModeConfiguration(device: UsbDevice) {
+        val generation = availabilityPollGeneration.incrementAndGet()
+        val deadlineNanos = System.nanoTime() + CARPLAY_MODE_DESCRIPTOR_TIMEOUT_MILLIS * 1_000_000L
+        fun attempt() {
+            try {
+                if (closed || generation != availabilityPollGeneration.get() || phase != Phase.REENUMERATION) return
+                iphoneHost.inspectCarPlayConfigurationAsync(device, executor) { configuration ->
+                    mainHandler.post {
+                        try {
+                            if (closed || generation != availabilityPollGeneration.get() || phase != Phase.REENUMERATION) {
+                                return@post
+                            }
+                            when {
+                                configuration != null -> useIphoneConfiguration(device, configuration)
+                                System.nanoTime() >= deadlineNanos -> fail(
+                                    IphoneUsbException.Protocol(
+                                        "iPhone 已处在 CarPlay 模式，但始终读不到它的 USB 数据配置；" +
+                                            "请换原装线重新插拔一次，若反复出现请导出诊断日志反馈",
+                                    ),
+                                )
+                                else -> mainHandler.postDelayed(
+                                    { attempt() },
+                                    CARPLAY_MODE_DESCRIPTOR_INTERVAL_MILLIS,
+                                )
+                            }
+                        } catch (error: Throwable) {
+                            fail(error)
+                        }
+                    }
+                }
+            } catch (error: Throwable) {
+                fail(error)
+            }
+        }
+        mainHandler.postDelayed({ attempt() }, CARPLAY_MODE_DESCRIPTOR_INTERVAL_MILLIS)
     }
 
     private fun useIphoneConfiguration(device: UsbDevice, configuration: com.shilapi.xcertplay.transport.CarPlayUsbConfiguration?) {
@@ -3391,6 +3448,9 @@ class CarPlayController(
         private const val CONTROL_LOOP_TIMEOUT_MILLIS = 5 * 60_000L
         private const val LOCATION_CONTROL_LOOP_TIMEOUT_MILLIS = 24 * 60 * 60 * 1_000L
         private const val PERMISSION_POLL_INTERVAL_MILLIS = 500L
+        /** Issue #205/#211: descriptor settle polling for an already-CarPlay-mode iPhone. */
+        private const val CARPLAY_MODE_DESCRIPTOR_INTERVAL_MILLIS = 500L
+        private const val CARPLAY_MODE_DESCRIPTOR_TIMEOUT_MILLIS = 8_000L
         private const val PERMISSION_POLL_TIMEOUT_MILLIS = 120_000L
         private const val DEVICE_AVAILABILITY_POLL_INTERVAL_MILLIS = 2_000L
         private const val NO_IPHONE_DEVICES_LOG_INTERVAL_MILLIS = 10_000L
