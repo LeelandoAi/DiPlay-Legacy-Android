@@ -2595,6 +2595,11 @@ class CarPlayController(
             }
             ncmOwnedLocally = false
             debugLog("wired NCM/VPN AirPlay transport attached")
+            // Issue #137: capture the attached service for the NO_AIRPLAY_TCP watchdog.
+            // The vpnService field can be cleared by teardown before the watchdog fires,
+            // and `?.let` was silently dropping the TCP snapshot that distinguishes
+            // SYN-ACK loss from a broken loopback relay.
+            val watchdogSnapshotService = vpnService
             if (closed) {
                 vpnService?.detach()
                 return
@@ -2665,8 +2670,11 @@ class CarPlayController(
                     // Issue #155/#123: capture the kernel TCP-table snapshot here so the
                     // report shows whether injected SYNs ever reached the TCP stack.
                     Iap2WiredControlTerminal.NO_AIRPLAY_TCP -> {
-                        vpnService?.let { service ->
+                        val service = watchdogSnapshotService ?: vpnService
+                        if (service != null) {
                             debugLog("wired ${service.tunTcpSnapshot()}")
+                        } else {
+                            debugLog("wired NO_AIRPLAY_TCP: transport snapshot unavailable (vpn service reference lost)")
                         }
                         CarPlayStatus.Failed("No AirPlay TCP after CarPlay StartSession; resetting link")
                     }
