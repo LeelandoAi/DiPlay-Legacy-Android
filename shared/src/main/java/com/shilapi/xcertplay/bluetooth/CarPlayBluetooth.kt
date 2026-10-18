@@ -7,6 +7,7 @@ interface CarPlayBluetooth {
     fun isSupported(): Boolean
     fun isEnabled(): Boolean
     fun enable(): Boolean
+    fun disable() {}
     fun getAdapterName(): String
     fun getPairedDevices(): List<CarPlayBluetoothDevice>
     fun getConnectedDevice(): CarPlayBluetoothDevice?

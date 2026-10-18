@@ -134,7 +134,6 @@ object SdpCodec {
     fun defaultRecords(identity: UsbBtIdentity): List<SdpRecord> {
         val list = mutableListOf<SdpRecord>()
         list.add(iap2Record(identity.iap2RfcommChannel))
-        list.add(handsfreeRecord())
         identity.deviceId?.let { dev ->
             list.add(
                 SdpRecord(

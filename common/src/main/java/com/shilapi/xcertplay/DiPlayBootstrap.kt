@@ -40,27 +40,23 @@ internal object DiPlayBootstrap {
                 file.setWritable(false, false); file.setWritable(true, true)
             }
 
-            // Validate the APK-bundled identity before it can replace a previous installation.
+            // Validate the APK-bundled identity once in staging before installing.
             LocalMfiAuthenticationClient.load(staging)
-            val currentValid = runCatching { LocalMfiAuthenticationClient.load(target) }.isSuccess
-            if (!currentValid || !sameAuthenticationFiles(target, staging)) {
-                val previous = File(privateRoot, "offline-mfi-previous")
+            val previous = File(privateRoot, "offline-mfi-previous")
+            previous.deleteRecursively()
+            if (target.exists()) {
+                check(target.renameTo(previous)) { "Could not rotate previous local authentication" }
+            }
+            try {
+                check(staging.renameTo(target)) { "Could not install local authentication" }
                 previous.deleteRecursively()
-                if (target.exists()) {
-                    check(target.renameTo(previous)) { "Could not rotate previous local authentication" }
-                }
-                try {
-                    check(staging.renameTo(target)) { "Could not install local authentication" }
-                    previous.deleteRecursively()
-                } catch (error: Throwable) {
-                    if (!target.exists() && previous.exists()) previous.renameTo(target)
-                    throw error
-                }
+            } catch (error: Throwable) {
+                if (!target.exists() && previous.exists()) previous.renameTo(target)
+                throw error
             }
         } finally {
             staging.deleteRecursively()
         }
-        LocalMfiAuthenticationClient.load(target)
         ready = true
     }
 
@@ -81,7 +77,9 @@ internal object DiPlayBootstrap {
                             val r2 = fileStream.read(b2)
                             if (r1 != r2) return false
                             if (r1 < 0) break
-                            if (!b1.sliceArray(0 until r1).contentEquals(b2.sliceArray(0 until r2))) return false
+                            for (i in 0 until r1) {
+                                if (b1[i] != b2[i]) return false
+                            }
                         }
                     }
                 }

@@ -41,6 +41,10 @@ class HybridBluetoothAdapter(
         return ok
     }
 
+    override fun disable() {
+        usbDongle?.disable()
+    }
+
     override fun getAdapterName(): String {
         val parts = mutableListOf<String>()
         if (hsae.isSupported()) parts.add("HSAE")

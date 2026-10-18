@@ -90,6 +90,12 @@ class UsbBtBluetoothAdapter(
     /** ACL handle -> L2CAP layer (one per peer connection). */
     private val l2capLayers = ConcurrentHashMap<Int, L2capLayer>()
 
+    /** ACL handle -> active RFCOMM layer (inbound or outbound). */
+    private val rfcommLayers = ConcurrentHashMap<Int, RfcommLayer>()
+
+    /** ACL handle -> active inbound or outbound RFCOMM stream. */
+    private val activeStreams = ConcurrentHashMap<Int, UsbBtRfcommStream>()
+
     private data class PendingAcl(
         val latch: CountDownLatch = CountDownLatch(1),
         @Volatile var handle: Int = -1,
@@ -127,14 +133,6 @@ class UsbBtBluetoothAdapter(
     init {
         runCatching {
             ensureUsbReceivers()
-            if (isSupported()) {
-                Thread({
-                    runCatching { enable() }
-                }, "UsbBtInitialEnable").apply {
-                    isDaemon = true
-                    start()
-                }
-            }
         }
     }
 
@@ -214,6 +212,10 @@ class UsbBtBluetoothAdapter(
 
         UsbBtLog.warn(appContext, TAG, "enable: all candidate dongles failed to open/initialize")
         return false
+    }
+
+    override fun disable() {
+        shutdown(unregisterReceivers = false)
     }
 
     /** HCI init step log, exposed for diagnostics. */
@@ -368,6 +370,12 @@ class UsbBtBluetoothAdapter(
             runCatching { authenticateAndEncrypt(h, handle) }
                 .onFailure { UsbBtLog.warn(appContext, TAG, "authenticateAndEncrypt failed (non-fatal)", it) }
 
+            // Check if peer already opened an inbound iAP2 stream on this ACL handle
+            activeStreams[handle]?.let { existing ->
+                UsbBtLog.log(appContext, TAG, "openRfcommStream: reusing existing inbound stream for $deviceAddress")
+                return existing
+            }
+
             // 3) SDP: find the iAP2 RFCOMM channel.
             val targetUuid = runCatching { UUID.fromString(uuid) }.getOrNull()
             val uuidBytes = if (targetUuid != null) uuidBigEndian(targetUuid) else HciProtocol.IAP2_UUID_BYTES
@@ -385,12 +393,19 @@ class UsbBtBluetoothAdapter(
             }
             sdp.close()
 
-            // 4) RFCOMM DLC to the channel.
-            val rfcomm = RfcommLayer(l2cap, when (val r = l2cap.connect(HciProtocol.L2CAP_PSM_RFCOMM)) {
-                is L2capLayer.L2capResult.Ok -> r.value
-                is L2capLayer.L2capResult.Failed ->
-                    throw IOException("RFCOMM L2CAP connect failed: ${r.reason}")
-            })
+            // 4) RFCOMM DLC to the channel. Reuse existing RFCOMM layer if established inbound
+            val rfcomm = rfcommLayers[handle] ?: run {
+                val chanResult = l2cap.connect(HciProtocol.L2CAP_PSM_RFCOMM)
+                val chan = when (chanResult) {
+                    is L2capLayer.L2capResult.Ok -> chanResult.value
+                    is L2capLayer.L2capResult.Failed -> {
+                        rfcommLayers[handle]?.let { return@run it }
+                        throw IOException("RFCOMM L2CAP connect failed: ${chanResult.reason}")
+                    }
+                }
+                RfcommLayer(l2cap, chan).also { rfcommLayers[handle] = it }
+            }
+
             val dlc = when (val r = rfcomm.openDlc(channel)) {
                 is RfcommLayer.RfcommResult.Ok -> r.value
                 is RfcommLayer.RfcommResult.Failed ->
@@ -403,6 +418,7 @@ class UsbBtBluetoothAdapter(
                 dlc = dlc,
                 onClose = { teardown(handle) },
             )
+            activeStreams[handle] = stream
             UsbBtLog.log(appContext, TAG, "openRfcommStream: connected successfully to $deviceAddress (handle=0x${handle.toString(16)}, channel=$channel)")
             return stream
         } catch (t: Throwable) {
@@ -461,7 +477,7 @@ class UsbBtBluetoothAdapter(
         }
     }
 
-    /** Get or create L2capLayer on [handle], registering the SDP server with CarPlay/iAP2 records. */
+    /** Get or create L2capLayer on [handle], registering the SDP server and inbound RFCOMM server. */
     private fun getOrCreateL2cap(handle: Int, h: UsbBtHci): L2capLayer {
         l2capLayers[handle]?.let { return it }
         return synchronized(l2capLayers) {
@@ -471,6 +487,25 @@ class UsbBtBluetoothAdapter(
                     name = "DiPlay",
                 )
                 l2cap.registerSdpServer(SdpCodec.defaultRecords(identity))
+
+                // Register inbound RFCOMM on PSM 3 so iPhone incoming connections succeed
+                l2cap.registerService(HciProtocol.L2CAP_PSM_RFCOMM) { channel ->
+                    val rfcomm = RfcommLayer(l2cap, channel)
+                    rfcommLayers[handle] = rfcomm
+                    rfcomm.onDlcOpened = { dlc ->
+                        Log.i(TAG, "Inbound RFCOMM DLC opened: ch=${dlc.serverChannel} dlci=${dlc.dlci} on handle=0x${handle.toString(16)}")
+                        if (dlc.serverChannel == UsbBtIdentity.IAP2_RFCOMM_CHANNEL) {
+                            val stream = UsbBtRfcommStream(
+                                rfcomm = rfcomm,
+                                dlc = dlc,
+                                onClose = { teardown(handle) },
+                            )
+                            activeStreams[handle] = stream
+                        }
+                    }
+                    { payload -> rfcomm.onRfcommFrame(payload) }
+                }
+
                 l2capLayers[handle] = l2cap
                 l2cap
             }
@@ -487,6 +522,8 @@ class UsbBtBluetoothAdapter(
                 aclHandleByAddr.remove(entry.key)
                 connectedOrder.remove(entry.key)
             }
+            rfcommLayers.remove(handle)?.let { runCatching { it.close() } }
+            activeStreams.remove(handle)?.let { runCatching { it.close() } }
             l2capLayers.remove(handle)?.let { runCatching { it.close() } }
             val h = synchronized(lock) { hci } ?: return
             runCatching { h.sendCommand(OP_DISCONNECT, encodeDisconnect(handle)) }
@@ -500,6 +537,8 @@ class UsbBtBluetoothAdapter(
             aclHandleByAddr.remove(entry.key)
             connectedOrder.remove(entry.key)
         }
+        rfcommLayers.remove(handle)?.let { runCatching { it.close() } }
+        activeStreams.remove(handle)?.let { runCatching { it.close() } }
         l2capLayers.remove(handle)?.let { runCatching { it.close() } }
         encryptedHandles.remove(handle)
         authLatches.remove(handle)?.countDown()
@@ -509,7 +548,7 @@ class UsbBtBluetoothAdapter(
 
     private fun teardown(handle: Int) = releaseAclRef(handle)
 
-    private fun authenticateAndEncrypt(h: UsbBtHci, handle: Int, timeoutMs: Long = 10_000L) {
+    private fun authenticateAndEncrypt(h: UsbBtHci, handle: Int, timeoutMs: Long = 3_000L) {
         if (encryptedHandles[handle] == true) return
         val authLatch = CountDownLatch(1)
         authLatches[handle] = authLatch
@@ -523,13 +562,15 @@ class UsbBtBluetoothAdapter(
             authLatches.remove(handle)
         }
 
+        if (encryptedHandles[handle] == true) return
+
         val encryptLatch = CountDownLatch(1)
         encryptLatches[handle] = encryptLatch
         try {
             val encRes = h.sendCommand(OP_SET_CONNECTION_ENCRYPTION, encodeSetConnectionEncryption(handle, true))
             UsbBtLog.log(appContext, TAG, "Set_Connection_Encryption for handle=0x${handle.toString(16)}: $encRes")
             if (encRes is UsbBtHci.HciResult.Ok) {
-                encryptLatch.await(5_000L, TimeUnit.MILLISECONDS)
+                encryptLatch.await(2_000L, TimeUnit.MILLISECONDS)
             }
         } finally {
             encryptLatches.remove(handle)
@@ -632,6 +673,14 @@ class UsbBtBluetoothAdapter(
 
         aclPumpThread = Thread({
             while (pumpRunning.get()) {
+                if (aclHandleByAddr.isEmpty()) {
+                    try {
+                        Thread.sleep(200)
+                    } catch (_: InterruptedException) {
+                        break
+                    }
+                    continue
+                }
                 val packets = runCatching { h.pollAclPackets(100) }.getOrNull()
                 if (!packets.isNullOrEmpty()) {
                     for (acl in packets) {
@@ -657,8 +706,10 @@ class UsbBtBluetoothAdapter(
     fun shutdown(unregisterReceivers: Boolean = true) {
         pumpRunning.set(false)
         eventPumpThread?.interrupt()
+        runCatching { eventPumpThread?.join(300) }
         eventPumpThread = null
         aclPumpThread?.interrupt()
+        runCatching { aclPumpThread?.join(300) }
         aclPumpThread = null
         pairingAgent?.stop()
         pairingAgent = null
@@ -676,10 +727,12 @@ class UsbBtBluetoothAdapter(
             toClose
         }
         if (closingHci != null) {
-            Thread({
-                runCatching { closingHci.close() }
-            }, "UsbBtHciClose").apply { isDaemon = true }.start()
+            runCatching { closingHci.close() }
         }
+        rfcommLayers.values.forEach { runCatching { it.close() } }
+        rfcommLayers.clear()
+        activeStreams.values.forEach { runCatching { it.close() } }
+        activeStreams.clear()
         aclHandleByAddr.keys.toList().forEach { addr ->
             aclHandleByAddr.remove(addr)?.let { handle ->
                 aclRefCount.remove(handle)

@@ -321,57 +321,7 @@ class UsbBtHci private constructor(
             encodeSetEventMask(),
         )
 
-        // 7. Write_Simple_Pairing_Mode (enable SSP for seamless pairing with iPhone)
-        val ssp = timed(
-            "Write_Simple_Pairing_Mode",
-            UsbBtTiming.WRITE_POLICY,
-            OP_WRITE_SIMPLE_PAIRING_MODE,
-            byteArrayOf(0x01),
-        )
-        if (ssp is HciResult.Failed) {
-            step("Write_Simple_Pairing_Mode failed (non-fatal): ${ssp.reason}")
-        }
-
-        // 7b. Write_Authentication_Enable (enable authentication for incoming bonding)
-        val authEnable = timed(
-            "Write_Authentication_Enable",
-            UsbBtTiming.WRITE_POLICY,
-            OP_WRITE_AUTHENTICATION_ENABLE,
-            byteArrayOf(0x01),
-        )
-        if (authEnable is HciResult.Failed) {
-            step("Write_Authentication_Enable failed (non-fatal): ${authEnable.reason}")
-        }
-
-        // 8. Write_Inquiry_Mode (2 = Extended Inquiry Result or RSSI)
-        timed(
-            "Write_Inquiry_Mode",
-            UsbBtTiming.WRITE_POLICY,
-            OP_WRITE_INQUIRY_MODE,
-            encodeWriteInquiryMode(2),
-        )
-
-        // 9. Write_Default_Link_Policy_Settings (0x0005 = role switch + sniff)
-        timed(
-            "Write_Default_Link_Policy",
-            UsbBtTiming.WRITE_POLICY,
-            OP_WRITE_DEFAULT_LINK_POLICY,
-            encodeWriteDefaultLinkPolicy(5),
-        )
-
-        // 10. Write_Class_Of_Device (Handsfree car audio: 0x200408)
-        val btIdentity = UsbBtIdentity(name = localName)
-        val cod = timed(
-            "Write_Class_Of_Device",
-            UsbBtTiming.WRITE_POLICY,
-            OP_WRITE_CLASS_OF_DEVICE,
-            encodeWriteClassOfDevice(btIdentity.classOfDevice),
-        )
-        if (cod is HciResult.Failed) {
-            step("Write_Class_Of_Device failed (non-fatal): ${cod.reason}")
-        }
-
-        // 11. Write_Local_Name
+        // 7. Write_Local_Name (set name as early as possible so inquiry shows DiPlay immediately)
         val name = timed(
             "Write_Local_Name",
             UsbBtTiming.WRITE_POLICY,
@@ -382,6 +332,56 @@ class UsbBtHci private constructor(
             step("Write_Local_Name failed (non-fatal): ${name.reason}")
         } else {
             step("Local_Name=$localName ok")
+        }
+
+        // 8. Write_Simple_Pairing_Mode (enable SSP for seamless pairing with iPhone)
+        val ssp = timed(
+            "Write_Simple_Pairing_Mode",
+            UsbBtTiming.WRITE_POLICY,
+            OP_WRITE_SIMPLE_PAIRING_MODE,
+            byteArrayOf(0x01),
+        )
+        if (ssp is HciResult.Failed) {
+            step("Write_Simple_Pairing_Mode failed (non-fatal): ${ssp.reason}")
+        }
+
+        // 8b. Write_Authentication_Enable (0x00 = do not force legacy PIN code authentication under SSP)
+        val authEnable = timed(
+            "Write_Authentication_Enable",
+            UsbBtTiming.WRITE_POLICY,
+            OP_WRITE_AUTHENTICATION_ENABLE,
+            byteArrayOf(0x00),
+        )
+        if (authEnable is HciResult.Failed) {
+            step("Write_Authentication_Enable failed (non-fatal): ${authEnable.reason}")
+        }
+
+        // 9. Write_Inquiry_Mode (2 = Extended Inquiry Result or RSSI)
+        timed(
+            "Write_Inquiry_Mode",
+            UsbBtTiming.WRITE_POLICY,
+            OP_WRITE_INQUIRY_MODE,
+            encodeWriteInquiryMode(2),
+        )
+
+        // 10. Write_Default_Link_Policy_Settings (0x0005 = role switch + sniff)
+        timed(
+            "Write_Default_Link_Policy",
+            UsbBtTiming.WRITE_POLICY,
+            OP_WRITE_DEFAULT_LINK_POLICY,
+            encodeWriteDefaultLinkPolicy(5),
+        )
+
+        // 11. Write_Class_Of_Device (Handsfree car audio: 0x200408)
+        val btIdentity = UsbBtIdentity(name = localName)
+        val cod = timed(
+            "Write_Class_Of_Device",
+            UsbBtTiming.WRITE_POLICY,
+            OP_WRITE_CLASS_OF_DEVICE,
+            encodeWriteClassOfDevice(btIdentity.classOfDevice),
+        )
+        if (cod is HciResult.Failed) {
+            step("Write_Class_Of_Device failed (non-fatal): ${cod.reason}")
         }
 
         // 12. Read_Inquiry_Response_TX_Power_Level

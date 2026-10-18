@@ -60,6 +60,12 @@ class RfcommLayer(
     /** dlci -> data handler. */
     private val dataHandlers = ConcurrentHashMap<Int, (ByteArray) -> Unit>()
 
+    /** serverChannel -> active Dlc. */
+    val activeDlcs = ConcurrentHashMap<Int, Dlc>()
+
+    /** Callback invoked when an inbound DLC is opened by peer. */
+    var onDlcOpened: ((Dlc) -> Unit)? = null
+
     @Volatile private var sessionOpen = false
     @Volatile private var closed = false
 
@@ -71,7 +77,7 @@ class RfcommLayer(
     // Frame encoding.
     // ------------------------------------------------------------------
 
-    /** Address field: EA=1, C/R bit, DLCI (6 bits). We are the initiator (C/R=1 on commands). */
+    /** Address field: EA=1, C/R bit, DLCI (6 bits). */
     private fun addressField(dlci: Int, command: Boolean): Byte =
         (0x01 or (if (command) 0x02 else 0x00) or (dlci shl 2)).toByte()
 
@@ -94,8 +100,8 @@ class RfcommLayer(
     }
 
     /** Build a complete RFCOMM frame: address | control | length | [data] | fcs. */
-    private fun buildFrame(dlci: Int, control: Int, data: ByteArray = byteArrayOf()): ByteArray {
-        val addr = addressField(dlci, command = true)
+    private fun buildFrame(dlci: Int, control: Int, data: ByteArray = byteArrayOf(), command: Boolean = true): ByteArray {
+        val addr = addressField(dlci, command = command)
         val ctrl = (control and 0xFF).toByte()
         val len = lengthField(data.size)
         val header = byteArrayOf(addr, ctrl) + len
@@ -103,9 +109,9 @@ class RfcommLayer(
         return frame + fcs(frame)
     }
 
-    private fun sendFrame(dlci: Int, control: Int, data: ByteArray = byteArrayOf()): Boolean {
+    private fun sendFrame(dlci: Int, control: Int, data: ByteArray = byteArrayOf(), command: Boolean = true): Boolean {
         if (closed) return false
-        return l2cap.send(channel, buildFrame(dlci, control, data))
+        return l2cap.send(channel, buildFrame(dlci, control, data, command = command))
     }
 
     // ------------------------------------------------------------------
@@ -140,6 +146,7 @@ class RfcommLayer(
      * Returns the DLC on success.
      */
     fun openDlc(serverChannel: Int): RfcommResult<Dlc> {
+        activeDlcs[serverChannel]?.let { return RfcommResult.Ok(it) }
         val session = openSession()
         if (session is RfcommResult.Failed) return session
         val dlci = rfcommDlci(serverChannel, initiator = true)
@@ -193,8 +200,10 @@ class RfcommLayer(
         )
         sendFrame(RFCOMM_DLCI_CONTROL, RFCOMM_UIH, msc)
 
+        val dlc = Dlc(serverChannel = serverChannel, dlci = dlci)
+        activeDlcs[serverChannel] = dlc
         Log.i(TAG, "RFCOMM DLC open: ch=$serverChannel dlci=$dlci")
-        return RfcommResult.Ok(Dlc(serverChannel = serverChannel, dlci = dlci))
+        return RfcommResult.Ok(dlc)
     }
 
     /**
@@ -233,13 +242,14 @@ class RfcommLayer(
         pendingUa.clear()
         pendingPn.clear()
         dataHandlers.clear()
+        activeDlcs.clear()
     }
 
     // ------------------------------------------------------------------
     // Inbound frame handling.
     // ------------------------------------------------------------------
 
-    private fun onRfcommFrame(payload: ByteArray) {
+    fun onRfcommFrame(payload: ByteArray) {
         if (payload.size < 4) return // addr+ctrl+len+fcs minimum
         val dlci = (payload[0].toInt() ushr 2) and 0x3F
         val control = payload[1].toInt() and 0xFF
@@ -268,8 +278,17 @@ class RfcommLayer(
                 pendingUa[dlci]?.countDown()
             }
             RFCOMM_SABM -> {
-                // Peer wants a DLC; answer UA (we are acceptor here).
-                sendFrame(dlci, RFCOMM_UA)
+                // Peer wants a DLC; answer UA as response (command = false).
+                sendFrame(dlci, RFCOMM_UA, command = false)
+                if (dlci == RFCOMM_DLCI_CONTROL) {
+                    sessionOpen = true
+                } else {
+                    val serverChannel = dlci ushr 1
+                    val dlc = Dlc(serverChannel, dlci)
+                    activeDlcs[serverChannel] = dlc
+                    Log.i(TAG, "Inbound RFCOMM DLC opened: ch=$serverChannel dlci=$dlci")
+                    onDlcOpened?.invoke(dlc)
+                }
             }
             RFCOMM_UIH -> {
                 if (dlci == RFCOMM_DLCI_CONTROL) {
@@ -295,7 +314,7 @@ class RfcommLayer(
             RFCOMM_MCC_PN -> {
                 // Peer PN request: echo it back as the response (accept defaults).
                 val rsp = mccFrame(RFCOMM_MCC_PN, value)
-                sendFrame(RFCOMM_DLCI_CONTROL, RFCOMM_UIH, rsp)
+                sendFrame(RFCOMM_DLCI_CONTROL, RFCOMM_UIH, rsp, command = false)
                 // If we have a pending PN for a matching DLCI, release it.
                 if (value.isNotEmpty()) {
                     val dlci = value[0].toInt() and 0xFF
@@ -305,7 +324,7 @@ class RfcommLayer(
             RFCOMM_MCC_MSC -> {
                 // Modem status: acknowledge with our own MSC response.
                 val rsp = mccFrame(RFCOMM_MCC_MSC, value)
-                sendFrame(RFCOMM_DLCI_CONTROL, RFCOMM_UIH, rsp)
+                sendFrame(RFCOMM_DLCI_CONTROL, RFCOMM_UIH, rsp, command = false)
             }
             else -> Log.w(TAG, "unhandled RFCOMM MCC 0x${type.toString(16)}")
         }

@@ -516,6 +516,7 @@ class CarPlayController(
             ).also { it.start() }
         }
         if (config.transport == CarPlayTransport.WIRED) {
+            runCatching { CarPlayBluetoothManager.get(appContext).disable() }
             permissionCloseable = iphoneHost.registerPermissionReceiver(::onIphonePermission)
             attachCloseable = iphoneHost.registerAttachReceiver(::onIphoneAttached)
             detachCloseable = iphoneHost.registerDetachReceiver(::onIphoneDetached)

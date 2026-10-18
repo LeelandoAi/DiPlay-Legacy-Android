@@ -978,6 +978,15 @@ class CarPlayHostActivity : ComponentActivity() {
             val previousWireless = wirelessEnabled
             loadConnectionSettings()
             if (previousWireless != wirelessEnabled) {
+                if (!wirelessEnabled) {
+                    runCatching {
+                        com.shilapi.xcertplay.bluetooth.CarPlayBluetoothManager.get(this).disable()
+                    }
+                } else {
+                    runCatching {
+                        com.shilapi.xcertplay.bluetooth.CarPlayBluetoothManager.get(this).enable()
+                    }
+                }
                 if (controller != null) {
                     restartCarPlay("switching to ${if (wirelessEnabled) "wireless" else "USB"}")
                 }
@@ -1848,6 +1857,11 @@ class CarPlayHostActivity : ComponentActivity() {
         ) { checked ->
             if (wirelessEnabled == checked) return@createWirelessCarPlayRow
             wirelessEnabled = checked
+            if (!checked) {
+                runCatching {
+                    com.shilapi.xcertplay.bluetooth.CarPlayBluetoothManager.get(this).disable()
+                }
+            }
             hotspotStatus = HotspotStatus(state = if (wirelessEnabled) getString(R.string.hotspot_state_stopped) else getString(R.string.hotspot_state_off))
             updateHotspotStatusBlock()
             appendLog(
@@ -4284,6 +4298,10 @@ class CarPlayHostActivity : ComponentActivity() {
                 appendLog("Wireless CarPlay configuration incomplete: $hotspotError")
                 setConnectionStage(hotspotError)
                 return
+            }
+        } else {
+            runCatching {
+                com.shilapi.xcertplay.bluetooth.CarPlayBluetoothManager.get(this).disable()
             }
         }
         val controllerGeneration = restartGeneration
