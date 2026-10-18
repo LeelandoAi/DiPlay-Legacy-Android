@@ -215,22 +215,8 @@ class IphoneUsbHost(
                     // a STALL almost always means the iPhone refused it: non-MFi cable, or
                     // the "Trust This Computer" prompt was never accepted.
                     val hint = if (stalled == maxAttempts) {
-                        if (device.productId == CARPLAY_MODE_PID) {
-                            // Issue #201: the attached device already presents the iPhone
-                            // CarPlay-mode product ID (0x12a8) — typically a CarPlay box
-                            // emulating an iPhone — yet STALLs Apple's vendor handshake
-                            // and exposes no USBMUX interface, so DiPlay cannot talk to
-                            // it. The cable/trust hint would be wrong here; this needs
-                            // a real iPhone connected directly to the head unit.
-                            " The attached device already reports the iPhone CarPlay-mode USB" +
-                                " product ID but rejects Apple's CarPlay handshake (USB STALL);" +
-                                " it looks like an emulation box, not a real iPhone. Connect a" +
-                                " real iPhone directly to the head unit instead."
-                        } else {
-                            " The iPhone rejected the CarPlay configuration request outright" +
-                                " (USB STALL). Use an original Apple cable and accept" +
-                                " \"Trust This Computer\" on the iPhone when prompted."
-                        }
+                        " The iPhone or USB device rejected Apple's CarPlay configuration request outright (USB STALL). " +
+                            "Use an original Apple cable, unlock the iPhone, and accept \"Trust This Computer\" or CarPlay prompt if shown."
                     } else {
                         ""
                     }

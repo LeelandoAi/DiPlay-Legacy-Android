@@ -67,6 +67,29 @@ class IphoneUsbBringupTest {
         assertTrue(failure.cause is LinkageError)
     }
 
+    @Test fun reenumerationRequestSucceedsOnCarPlayPid() {
+        val deviceState = Shadow.extract<Device>(device)
+        deviceState.pid = 0x12a8
+        connectionState.vendorTransferResult = 1
+        val host = IphoneUsbHost(RuntimeEnvironment.getApplication(), manager, IphoneUsbMatcher.appleVendor())
+        var result: IphoneUsbHost.TransitionResult? = null
+        host.requestCarPlayReenumerationAsync(device, Executor { it.run() }) { result = it }
+        assertTrue("Expected ReenumerationRequested, got $result", result is IphoneUsbHost.TransitionResult.ReenumerationRequested)
+    }
+
+    @Test fun reenumerationStallGivesAccurateTrustHintInsteadOfEmulationBox() {
+        val deviceState = Shadow.extract<Device>(device)
+        deviceState.pid = 0x12a8
+        connectionState.vendorTransferResult = -1
+        val host = IphoneUsbHost(RuntimeEnvironment.getApplication(), manager, IphoneUsbMatcher.appleVendor())
+        var result: IphoneUsbHost.TransitionResult? = null
+        host.requestCarPlayReenumerationAsync(device, Executor { it.run() }) { result = it }
+        assertTrue("Expected Failed, got $result", result is IphoneUsbHost.TransitionResult.Failed)
+        val error = (result as IphoneUsbHost.TransitionResult.Failed).error
+        assertTrue(error.message?.contains("rejected Apple's CarPlay configuration request outright (USB STALL)") == true)
+        assertFalse(error.message?.contains("emulation box") == true)
+    }
+
     private fun open(messages: MutableList<String>): IphoneUsbHost.Iap2SessionResult? {
         var result: IphoneUsbHost.Iap2SessionResult? = null
         IphoneUsbHost(
@@ -205,10 +228,17 @@ class IphoneUsbBringupTest {
             return true
         }
         @Implementation fun close() { closeCount++ }
+        var vendorTransferResult = 1
         @Implementation fun controlTransfer(
             requestType: Int, request: Int, value: Int, index: Int,
             buffer: ByteArray?, length: Int, timeout: Int,
         ): Int {
+            if (request == 0x52) {
+                if (vendorTransferResult > 0 && buffer != null && buffer.isNotEmpty()) {
+                    buffer[0] = 0
+                }
+                return vendorTransferResult
+            }
             // Phone says configuration 6 even before the host kernel has selected it.
             if (request != 8) return -1
             buffer!![0] = 6
