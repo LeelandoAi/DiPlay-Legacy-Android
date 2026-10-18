@@ -1,3 +1,10 @@
+# DiPlay 0.2.74 — 2026-10-18
+
+- Wired CarPlay USB re-enumeration & descriptor probe fix: fix wired CarPlay disconnection and infinite retry loop on legacy head units (e.g. Allwinner T3) caused by erroneously skipping the Apple vendor re-enumeration request (0x52) on devices with standard iPhone PID 0x12a8; implement fast non-blocking descriptor probe with graceful fallback to standard vendor handshake and STALL tolerance (#217, #219).
+- Accurate USB STALL diagnostic hint: remove misleading "emulation box" warning for real iPhones and provide clear user guidance to unlock screen and grant trust.
+
+See [v0.2.74 release notes](docs/RELEASE-NOTES-0.2.74.md) for validation and device-testing limits.
+
 # DiPlay 0.2.73 — 2026-10-18
 
 - Legacy USB configuration fallback & reconnection fix: support graceful USB configuration fallback and robust descriptor parsing on legacy Android head units (e.g., Allwinner T3) when upgrading to v0.2.72 (#217).
