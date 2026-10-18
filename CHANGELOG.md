@@ -1,3 +1,12 @@
+# DiPlay 0.2.75 — 2026-10-18
+
+- External USB Bluetooth adapter (CM390/Actions/Realtek) pairing & connection fix: implement inbound RFCOMM (PSM 0x0003) L2CAP service factory and auto-session negotiation; immediate broadcast name initialization to eliminate 2-minute latency; disable forced PIN auth on SSP; remove unhandled HFP record to eliminate iOS pairing rejection.
+- Hotplug & device filter expansion: register standard USB Bluetooth class (224/1/1) and broad VID matches to retain permissions across hotplugs.
+- Wired mode USB bus deadlock & watchdog reboot prevention: safely disable USB Bluetooth dongle and pump threads when switching to wired mode or disabling wireless, eliminating kernel mutex deadlocks on legacy Allwinner T3 single-controller USB hubs.
+- Cold startup performance optimization: eliminate redundant triplicate ECDSA verification loops during asset staging, slashing cold boot duration on low-end hardware from 10-15s to under 1s.
+
+See [v0.2.75 release notes](docs/RELEASE-NOTES-0.2.75.md) for validation and device-testing limits.
+
 # DiPlay 0.2.74 — 2026-10-18
 
 - Wired CarPlay USB re-enumeration & descriptor probe fix: fix wired CarPlay disconnection and infinite retry loop on legacy head units (e.g. Allwinner T3) caused by erroneously skipping the Apple vendor re-enumeration request (0x52) on devices with standard iPhone PID 0x12a8; implement fast non-blocking descriptor probe with graceful fallback to standard vendor handshake and STALL tolerance (#217, #219).
